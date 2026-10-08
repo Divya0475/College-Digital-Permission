@@ -38,8 +38,8 @@ import {
 } from "recharts";
 
 import DashboardLayout from "../../components/DashboardLayout";
-import CTPOMobileNav from "../../components/CTPOMobileNav";
 import api from "../../lib/api";
+import { getSimplifiedStatus } from "../../lib/utils";
 
 // ============================================================
 // CTPO REPORTS
@@ -1057,7 +1057,7 @@ export default function CTPOReports() {
 
     const details = req.reason || req.purpose || req.description || req.details || '-';
     const date = new Date(req.createdAt || req.requestDate || Date.now()).toLocaleDateString();
-    const status = req._status || req.status || '-';
+    const status = getSimplifiedStatus(req._status || req.status);
 
     return {
       year,
@@ -1291,7 +1291,6 @@ export default function CTPOReports() {
 
         <div className="ctpo-reports-header">
           <div className="ctpo-reports-title-row">
-            <CTPOMobileNav />
             <div>
               <h1>Reports &amp; Analytics</h1>
 
@@ -1542,9 +1541,9 @@ export default function CTPOReports() {
           <div className="ctpo-report-card">
             <div className="ctpo-card-header">
               <div>
-                <h2>Requests by Permission Type</h2>
+                <h2 className="ctpo-trend-title">Requests by Permission Type</h2>
 
-                <p>Distribution of permission requests by type</p>
+                <p className="ctpo-trend-subtitle">Distribution of permission requests by type</p>
               </div>
             </div>
 
@@ -1635,8 +1634,8 @@ export default function CTPOReports() {
         .ctpo-reports-page {
           overflow-x: hidden;
           max-width: 1600px;
-          margin: 0 auto;
-          padding: 28px 32px 40px;
+          margin: 0;
+          padding: 0;
           box-sizing: border-box;
           background: #f8fafc;
           min-height: 100%;
@@ -1737,8 +1736,8 @@ export default function CTPOReports() {
         }
 
         .ctpo-period-dropdown:focus {
-          border-color: #60a5fa;
-          box-shadow: 0 0 0 3px rgba(37,99,235,.12);
+          border-color: #10b981;
+          box-shadow: 0 0 0 3px rgba(16,185,129,.12);
         }
 
         .ctpo-export-button {
@@ -1847,8 +1846,10 @@ export default function CTPOReports() {
         .ctpo-summary-card {
           background: #fff;
           border: 1px solid #e2e8f0;
-          border-radius: 14px;
-          padding: 17px;
+          border-radius: 12px;
+          min-height: 100px;
+          padding: 20px 24px;
+          box-shadow: 0 1px 3px rgba(15, 23, 42, 0.06);
           display: flex;
           align-items: center;
           gap: 13px;
@@ -2196,7 +2197,7 @@ export default function CTPOReports() {
         @media (max-width: 900px) {
 
           .ctpo-reports-page {
-            padding: 22px 20px 32px;
+            padding: 0;
           }
 
           .ctpo-report-main-grid {
@@ -2226,7 +2227,7 @@ export default function CTPOReports() {
         @media (max-width: 600px) {
 
           .ctpo-reports-page {
-            padding: 16px 12px 28px;
+            padding: 0;
           }
 
           .ctpo-reports-header {

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useAuth } from "../context/AuthContext";
 import StudentLayout from "../components/StudentLayout";
 import api from "../lib/api";
+import { getOrdinalYear } from "../lib/utils";
 import { useNavigate } from "react-router-dom";
 
 import { FiCalendar as Calendar } from "react-icons/fi";
@@ -73,11 +74,11 @@ export default function StudentDashboard() {
   return (
     <StudentLayout
       pageTitle={
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div className="s-student-dashboard-heading" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
           <div style={{ color: '#475569', fontSize: 16, fontWeight: 600 }}>
             Welcome back,
           </div>
-          <div style={{ fontSize: 32, fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', letterSpacing: '-0.5px' }}>
+          <div className="s-student-dashboard-name" style={{ fontSize: 32, fontWeight: 800, margin: 0, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', letterSpacing: '-0.5px' }}>
             {(() => {
               const nameParts = (user?.name || "Student").trim().split(" ");
               if (nameParts.length > 1) {
@@ -93,27 +94,21 @@ export default function StudentDashboard() {
               return <span style={{ color: '#0f172a' }}>{nameParts[0]}</span>;
             })()}
           </div>
-          <div style={{ fontSize: "15px", fontWeight: 600, color: "#64748b", display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="s-student-dashboard-meta" style={{ fontSize: "15px", fontWeight: 600, color: "#64748b", display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
             {(() => {
               const tier = String(user?.yearTier || '');
               const yr = String(user?.year || '');
-              const name = String(user?.name || '');
               let yearStr = '';
-              if (tier.includes('1') || yr === '1' || name.includes('1st') || name.includes('1')) yearStr = '1st Year';
-              else if (tier.includes('2') || yr === '2' || name.includes('2nd') || name.includes('2')) yearStr = '2nd Year';
-              else if (tier.includes('3') || yr === '3' || name.includes('3rd') || name.includes('3nd') || name.includes('3')) yearStr = '3rd Year';
-              else if (tier.includes('4') || yr === '4' || name.includes('4th') || name.includes('4')) yearStr = '4th Year';
-              else yearStr = yr ? `${yr} Year` : 'Year N/A';
-              
+              yearStr = getOrdinalYear(tier || yr) || (yr ? `${yr} Year` : 'Year N/A');
               const branch = user?.branchName || user?.branchId?.name || user?.branch || 'Branch N/A';
               const roll = user?.rollNo || user?.username || 'Roll N/A';
 
               return (
                 <>
                   <span>{yearStr}</span>
-                  <span style={{ color: '#cbd5e1', margin: '0 10px', fontWeight: 400 }}>|</span>
+                  <span className="s-student-meta-divider" style={{ color: '#cbd5e1', margin: '0 10px', fontWeight: 400 }}>|</span>
                   <span>{branch}</span>
-                  <span style={{ color: '#cbd5e1', margin: '0 10px', fontWeight: 400 }}>|</span>
+                  <span className="s-student-meta-divider" style={{ color: '#cbd5e1', margin: '0 10px', fontWeight: 400 }}>|</span>
                   <span>{roll}</span>
                 </>
               );
@@ -123,7 +118,7 @@ export default function StudentDashboard() {
       }
       pageSubtitle={null}
       headerRight={
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', padding: '10px 16px', borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
+        <div className="s-student-dashboard-date" style={{ display: 'flex', alignItems: 'center', gap: 12, background: '#fff', padding: '10px 16px', borderRadius: 12, border: '1px solid #e2e8f0', boxShadow: '0 1px 2px rgba(0,0,0,0.05)' }}>
           <div style={{ width: 40, height: 40, borderRadius: 10, background: '#ecfdf5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981' }}>
             <Calendar size={20} />
           </div>

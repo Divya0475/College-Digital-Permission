@@ -14,7 +14,6 @@ import {
   FiCheckCircle as CheckCircle,
   FiXCircle as XCircle,
   FiClock as Clock,
-  FiSearch as Search,
   FiEye as Eye,
   FiFileText as FileText,
   FiDownload as Download,
@@ -24,9 +23,21 @@ import jsPDF from 'jspdf';
 import 'jspdf-autotable';
 
 import DashboardLayout from '../../components/DashboardLayout';
-import CTPOMobileNav from '../../components/CTPOMobileNav';
 import StatusBadge from '../../components/StatusBadge';
 import api from '../../lib/api';
+import { getSimplifiedStatus } from '../../lib/utils';
+
+const getReferenceId = (request) => {
+  const reference = request?.referenceId || request?.refId;
+  if (reference) return String(reference).replace(/^PERM-/i, 'KDP-');
+  const id = String(request?._id || request?.id || request?.requestId || '');
+  if (!id) return 'N/A';
+  const createdAt = request?.createdAt || request?.submittedAt;
+  const year = createdAt && !Number.isNaN(new Date(createdAt).getTime())
+    ? new Date(createdAt).getFullYear()
+    : new Date().getFullYear();
+  return `KDP-${year}-${id.slice(-6).toUpperCase()}`;
+};
 
 
 // ============================================================
@@ -987,7 +998,7 @@ export default function CTPOHistory() {
       request._rollNo,
       request?.reason || request?.purpose || request?.description || request?.details || '',
       formatDate(request?.createdAt || request?.submittedAt || request?.createdDate || request?.requestDate),
-      getCTPODisplayStatus(request),
+      getSimplifiedStatus(getCTPODisplayStatus(request)),
     ]);
 
     doc.autoTable({
@@ -1019,7 +1030,6 @@ export default function CTPOHistory() {
         <div className="ctpo-history-header">
 
           <div className="ctpo-history-title-row">
-            <CTPOMobileNav />
             <div>
               <h1>
                 All Requests
@@ -1142,11 +1152,6 @@ export default function CTPOHistory() {
         <div className="ctpo-search-filter-card">
 
           <div className="ctpo-search-box">
-
-            <Search
-              size={19}
-              className="ctpo-search-icon"
-            />
 
             <input
               type="text"
@@ -1343,7 +1348,7 @@ export default function CTPOHistory() {
                               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
                                 <span>{request._permissionType}</span>
                                 <span style={{ fontSize: '11px', color: '#64748b', fontWeight: 500, fontFamily: 'monospace', marginTop: '2px' }}>
-                                  Ref: {(request?.referenceId || request?.refId || '').replace(/^PERM-/i, 'KDP-') || 'N/A'}
+                                  Ref: {getReferenceId(request)}
                                 </span>
                               </div>
                             </div>
@@ -1421,9 +1426,7 @@ export default function CTPOHistory() {
 
                             <StatusBadge
                               status={
-                                getCTPODisplayStatus(
-                                  request
-                                )
+                                getSimplifiedStatus(getCTPODisplayStatus(request))
                               }
                               showIcon={false}
                             />
@@ -1484,7 +1487,7 @@ export default function CTPOHistory() {
         .ctpo-history-page {
           width: 100%;
           max-width: 100%;
-          padding: 30px 32px 40px;
+          padding: 0;
           margin: 0;
           color: #0f172a;
         }
@@ -1645,20 +1648,11 @@ export default function CTPOHistory() {
           background: #ffffff;
         }
 
-        .ctpo-search-icon {
-          position: absolute;
-          left: 14px;
-          top: 50%;
-          transform: translateY(-50%);
-          color: #94a3b8;
-          pointer-events: none;
-        }
-
         /* Inner input: borderless — the outer card provides the single border */
         .ctpo-search-box input {
           width: 100%;
           height: 44px;
-          padding: 0 14px 0 44px;
+          padding: 0 14px;
           border: none;
           border-radius: 12px;
           outline: none;
@@ -1674,8 +1668,8 @@ export default function CTPOHistory() {
         }
 
         .ctpo-search-box input:focus {
-          background: #f8faff;
-          box-shadow: none;
+          background: #f0fdf4;
+          box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
         }
 
         .ctpo-filter-select {
@@ -1694,7 +1688,9 @@ export default function CTPOHistory() {
         }
 
         .ctpo-filter-select:focus {
-          background: #f8faff;
+          border-color: #10b981;
+          background: #f0fdf4;
+          box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
         }
 
         /* TABLE CARD */
@@ -1902,7 +1898,7 @@ export default function CTPOHistory() {
         /* RESPONSIVE */
         @media (max-width: 1100px) {
           .ctpo-history-page {
-            padding: 24px;
+            padding: 0;
           }
 
           .ctpo-search-filter-card {
@@ -1961,7 +1957,7 @@ export default function CTPOHistory() {
 
         @media (max-width: 600px) {
           .ctpo-history-page {
-            padding: 16px 12px 30px;
+            padding: 0;
           }
 
           .ctpo-history-header h1 {
@@ -2033,12 +2029,13 @@ export default function CTPOHistory() {
 
           .ctpo-history-table td {
             display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 8px;
+            flex-direction: column;
+            align-items: stretch;
+            gap: 4px;
             padding: 5px 0;
             border-bottom: none;
             font-size: 12px;
+            min-width: 0;
           }
 
           .ctpo-history-table td::before {
@@ -2049,14 +2046,40 @@ export default function CTPOHistory() {
             text-transform: uppercase;
             letter-spacing: 0.04em;
             flex-shrink: 0;
-            width: 80px;
+            width: auto;
             padding-top: 1px;
+          }
+
+          .ctpo-request-type,
+          .ctpo-student-info,
+          .ctpo-request-details {
+            width: 100%;
+            min-width: 0;
+          }
+
+          .ctpo-request-type {
+            white-space: normal;
+            overflow-wrap: anywhere;
+          }
+
+          .ctpo-request-type > div {
+            min-width: 0;
+            overflow-wrap: anywhere;
+          }
+
+          .ctpo-request-details {
+            white-space: normal;
+            overflow-wrap: anywhere;
           }
 
           .ctpo-history-table td:last-child {
             border-top: 1px solid #f1f5f9;
             margin-top: 4px;
             padding-top: 10px;
+          }
+
+          .ctpo-view-button {
+            width: 100%;
           }
 
           .ctpo-student-info strong,

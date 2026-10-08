@@ -469,7 +469,7 @@ export default function AdminReports() {
           padding: '22px 24px',
           boxShadow: '0 1px 3px 0 rgba(0,0,0,0.03)'
         }}>
-          <div style={{
+          <div className="admin-report-trend-header" style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
@@ -496,7 +496,7 @@ export default function AdminReports() {
             </div>
 
             {/* Time Filter Tabs */}
-            <div style={{
+            <div className="admin-report-trend-tabs" style={{
               display: 'flex',
               alignItems: 'center',
               gap: '4px',
@@ -514,6 +514,7 @@ export default function AdminReports() {
                 <button
                   key={t.val}
                   onClick={() => setRange(t.val)}
+                  className="admin-report-trend-tab"
                   style={{
                     border: 'none',
                     backgroundColor: range === t.val ? '#10b981' : 'transparent',
@@ -857,4 +858,3 @@ export default function AdminReports() {
     </DashboardLayout>
   );
 }
-

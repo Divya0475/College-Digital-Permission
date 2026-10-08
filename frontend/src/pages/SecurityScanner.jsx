@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../components/DashboardLayout';
 import api from '../lib/api';
+import { formatTime12 } from '../lib/utils';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -23,13 +24,31 @@ import {
   CheckCircle2
 } from 'lucide-react';
 
+const getSecurityDateKey = (value) => {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return value;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date);
+  const values = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  return `${values.year}-${values.month}-${values.day}`;
+};
+
 function ScanResult({ result, data, errorMsg }) {
   if (!result) return null;
   const isValid = result === 'VALID';
 
   const config = {
     VALID: {
-      title: 'ENTRY ALLOWED â€” PASS VALID',
+      title: 'ENTRY ALLOWED - PASS VALID',
       subtitle: 'Student authorized to leave/enter campus gate',
       icon: ShieldCheck,
       color: 'var(--green, #10b981)',
@@ -37,7 +56,7 @@ function ScanResult({ result, data, errorMsg }) {
       border: 'var(--green, #10b981)'
     },
     ALREADY_USED: {
-      title: 'ENTRY DENIED â€” ALREADY USED',
+      title: 'ENTRY DENIED - ALREADY USED',
       subtitle: 'This single-use QR pass has already been scanned at the gate',
       icon: ShieldAlert,
       color: 'var(--red, #ef4444)',
@@ -45,7 +64,7 @@ function ScanResult({ result, data, errorMsg }) {
       border: 'var(--red, #ef4444)'
     },
     EXPIRED: {
-      title: 'ENTRY DENIED â€” PASS EXPIRED',
+      title: 'ENTRY DENIED - PASS EXPIRED',
       subtitle: 'The valid time window for this out-pass has expired',
       icon: Clock,
       color: 'var(--yellow, #f59e0b)',
@@ -53,7 +72,7 @@ function ScanResult({ result, data, errorMsg }) {
       border: 'var(--yellow, #f59e0b)'
     },
     INVALID: {
-      title: 'ENTRY DENIED â€” INVALID PASS',
+      title: 'ENTRY DENIED - INVALID PASS',
       subtitle: errorMsg || 'Unrecognized QR token or forged digital pass',
       icon: XCircle,
       color: 'var(--red, #ef4444)',
@@ -124,14 +143,14 @@ function ScanResult({ result, data, errorMsg }) {
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
             <span style={{ color: 'var(--text-muted, #94a3b8)' }}>Out Date & Time:</span>
             <span style={{ fontWeight: 500, color: 'var(--text-primary, #0f172a)' }}>
-              {data.outDate ? new Date(data.outDate).toLocaleDateString('en-IN') : 'N/A'} at {data.outTime || 'N/A'}
+              {data.outDate ? new Date(data.outDate).toLocaleDateString('en-IN') : 'N/A'} at {formatTime12(data.outTime) || 'N/A'}
             </span>
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px' }}>
             <span style={{ color: 'var(--text-muted, #94a3b8)' }}>Expected Return:</span>
             <span style={{ fontWeight: 500, color: 'var(--text-primary, #0f172a)' }}>
-              {data.expectedReturnDate ? new Date(data.expectedReturnDate).toLocaleDateString('en-IN') : 'N/A'} at {data.expectedReturnTime || 'N/A'}
+              {data.expectedReturnDate ? new Date(data.expectedReturnDate).toLocaleDateString('en-IN') : 'N/A'}{data.expectedReturnTime ? ` at ${formatTime12(data.expectedReturnTime)}` : ''}
             </span>
           </div>
 
@@ -144,11 +163,14 @@ function ScanResult({ result, data, errorMsg }) {
 // ZXing provides QR decoding in browsers without a native BarcodeDetector.
 function NativeQRScanner({ onScan, onClose }) {
   const videoRef = useRef(null);
+  const didScanRef = useRef(false);
   const [error, setError] = useState('');
+  const [scanHint, setScanHint] = useState('Center the QR code in the frame and hold steady.');
 
   useEffect(() => {
     let active = true;
     let controls;
+    didScanRef.current = false;
 
     async function startCamera() {
       try {
@@ -157,33 +179,43 @@ function NativeQRScanner({ onScan, onClose }) {
           return;
         }
 
-        const [{ BrowserQRCodeReader }, { DecodeHintType }] = await Promise.all([
+        const [{ BrowserQRCodeReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
           import('@zxing/browser'),
           import('@zxing/library'),
         ]);
         if (!active) return;
         const reader = new BrowserQRCodeReader(
-          new Map([[DecodeHintType.TRY_HARDER, true]]),
-          { delayBetweenScanAttempts: 200, delayBetweenScanSuccess: 1000 }
+          new Map([
+            [DecodeHintType.TRY_HARDER, true],
+            [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.QR_CODE]],
+          ]),
+          { delayBetweenScanAttempts: 100, delayBetweenScanSuccess: 700 }
         );
         controls = await reader.decodeFromConstraints(
           {
             video: {
               facingMode: { ideal: 'environment' },
-              width: { ideal: 1920 },
-              height: { ideal: 1080 },
+              width: { ideal: 1280 },
+              height: { ideal: 720 },
             },
           },
           videoRef.current,
-          (result) => {
-            if (result) {
-              controls?.stop();
+          (result, decodeError, callbackControls) => {
+            if (result && !didScanRef.current) {
+              didScanRef.current = true;
+              (callbackControls || controls)?.stop();
               onScan(result.getText());
+            } else if (
+              decodeError &&
+              !['NotFoundException', 'ChecksumException', 'FormatException'].includes(decodeError.name)
+            ) {
+              console.warn('QR decode attempt failed:', decodeError);
+              setScanHint('Unable to read this QR clearly. Adjust distance or brightness and try again.');
             }
           }
         );
 
-        if (!active) controls.stop();
+        if (!active || didScanRef.current) controls.stop();
       } catch (err) {
         console.error('Camera error:', err);
         if (active) {
@@ -222,16 +254,35 @@ function NativeQRScanner({ onScan, onClose }) {
         top: '50%',
         left: '50%',
         transform: 'translate(-50%, -50%)',
-        width: '200px',
-        height: '200px',
+        width: '224px',
+        height: '224px',
         border: '2px solid rgba(255,255,255,0.5)',
         borderRadius: '12px',
         boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)'
       }}></div>
 
+      {!error && (
+        <div style={{
+          position: 'absolute',
+          bottom: 12,
+          left: 12,
+          right: 12,
+          padding: '8px 12px',
+          borderRadius: 8,
+          background: 'rgba(0,0,0,0.72)',
+          color: '#fff',
+          textAlign: 'center',
+          fontSize: 13,
+          pointerEvents: 'none'
+        }}>
+          {scanHint}
+        </div>
+      )}
+
       <button
         type="button"
         onClick={onClose}
+        aria-label="Close QR scanner"
         style={{
           position: 'absolute',
           top: '10px',
@@ -257,8 +308,9 @@ function NativeQRScanner({ onScan, onClose }) {
 export default function SecurityScanner() {
   // The sidebar controls the current view through ?view=history.
   // Keep the view state URL-driven so there is only one sidebar.
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const activeView = window.location.pathname === '/security/history' || searchParams.get('view') === 'history' ? 'history' : 'scanner';
+  const activeView = location.pathname === '/security/history' || searchParams.get('view') === 'history' ? 'history' : 'scanner';
   const [token, setToken] = useState('');
   const [scanResult, setScanResult] = useState(null);
   const [scanData, setScanData] = useState(null);
@@ -290,7 +342,16 @@ export default function SecurityScanner() {
           ? '/security/recent-scans?history=true'
           : '/security/recent-scans'
       );
-      setRecentScans(res.data?.data || []);
+      const scans = Array.isArray(res.data?.data) ? res.data.data : [];
+      setRecentScans(
+        historyMode
+          ? scans.filter((scan) =>
+              scan?.scanResult === 'VALID' &&
+              scan?.requestId &&
+              !Number.isNaN(new Date(scan?.scannedAt).getTime())
+            )
+          : scans
+      );
     } catch (e) {
       console.error(e);
     }
@@ -325,8 +386,10 @@ export default function SecurityScanner() {
     let scanToken = scannedValue;
     try {
       const scanUrl = new URL(scannedValue, window.location.origin);
+      const queryToken = scanUrl.searchParams.get('token') || scanUrl.searchParams.get('passToken');
       const tokenMatch = scanUrl.pathname.match(/(?:^|\/)verify\/([^/]+)\/?$/i);
       if (tokenMatch) scanToken = decodeURIComponent(tokenMatch[1]);
+      else if (queryToken) scanToken = queryToken;
     } catch {
       // Keep directly entered tokens unchanged.
     }
@@ -395,7 +458,12 @@ export default function SecurityScanner() {
 
   // Filter Active Passes
   const getFilteredActivePasses = () => {
+    const today = getSecurityDateKey(new Date());
+
     let filtered = activePasses.filter(p => {
+      if (!p.outDate) return false;
+      if (getSecurityDateKey(p.outDate) !== today || p.isExpired === true) return false;
+
       const name = p.studentName?.toLowerCase() || '';
       const roll = p.rollNo?.toLowerCase() || '';
       const term = activeSearch.toLowerCase();
@@ -433,21 +501,30 @@ export default function SecurityScanner() {
 
   // Filter History
   const getFilteredHistory = () => {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const startOfWeek = startOfToday - (now.getDay() * 24 * 60 * 60 * 1000);
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const todayKey = getSecurityDateKey(new Date());
+    const [year, monthNumber, day] = todayKey.split('-').map(Number);
+    const todayUTC = new Date(Date.UTC(year, monthNumber - 1, day));
+    const weekStartUTC = new Date(todayUTC);
+    weekStartUTC.setUTCDate(todayUTC.getUTCDate() - todayUTC.getUTCDay());
+    const weekStart = getSecurityDateKey(weekStartUTC.toISOString());
+    const monthStart = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
 
     let filtered = recentScans.filter(scan => {
+      if (
+        scan?.scanResult !== 'VALID' ||
+        !scan?.requestId ||
+        Number.isNaN(new Date(scan?.scannedAt).getTime())
+      ) return false;
+
       const name = scan.requestId?.studentId?.name?.toLowerCase() || '';
       const roll = scan.requestId?.studentId?.rollNo?.toLowerCase() || '';
       const term = historySearch.toLowerCase();
       if (term && !name.includes(term) && !roll.includes(term)) return false;
 
-      const scanTime = new Date(scan.scannedAt).getTime();
-      if (historyDateFilter === 'Today' && scanTime < startOfToday) return false;
-      if (historyDateFilter === 'This Week' && scanTime < startOfWeek) return false;
-      if (historyDateFilter === 'This Month' && scanTime < startOfMonth) return false;
+      const scanDate = getSecurityDateKey(scan.scannedAt);
+      if (historyDateFilter === 'Today' && scanDate !== todayKey) return false;
+      if (historyDateFilter === 'This Week' && scanDate < weekStart) return false;
+      if (historyDateFilter === 'This Month' && scanDate < monthStart) return false;
 
       return true;
     });
@@ -463,17 +540,22 @@ export default function SecurityScanner() {
 
   // Calculate stats for History
   const getHistoryStats = () => {
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    const startOfWeek = startOfToday - (now.getDay() * 24 * 60 * 60 * 1000);
-    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const todayKey = getSecurityDateKey(new Date());
+    const [year, monthNumber, day] = todayKey.split('-').map(Number);
+    const todayUTC = new Date(Date.UTC(year, monthNumber - 1, day));
+    const weekStartUTC = new Date(todayUTC);
+    weekStartUTC.setUTCDate(todayUTC.getUTCDate() - todayUTC.getUTCDay());
+    const weekStart = getSecurityDateKey(weekStartUTC.toISOString());
+    const monthStart = `${year}-${String(monthNumber).padStart(2, '0')}-01`;
 
     let today = 0, week = 0, month = 0;
     recentScans.forEach(scan => {
-      const time = new Date(scan.scannedAt).getTime();
-      if (time >= startOfToday) today++;
-      if (time >= startOfWeek) week++;
-      if (time >= startOfMonth) month++;
+      if (scan?.scanResult !== 'VALID' || !scan?.requestId) return;
+      const scanDate = getSecurityDateKey(scan.scannedAt);
+      if (!scanDate) return;
+      if (scanDate === todayKey) today++;
+      if (scanDate >= weekStart) week++;
+      if (scanDate >= monthStart) month++;
     });
     return { today, week, month };
   };
@@ -772,7 +854,7 @@ export default function SecurityScanner() {
                       </label>
                       <input
                         className="form-input"
-                        style={{ width: '100%', padding: '12px', fontSize: '16px', borderRadius: '8px', border: '1px solid var(--border, #e2e8f0)' }}
+                        style={{ width: '100%', padding: '12px', fontSize: '14px', fontFamily: 'monospace', borderRadius: '8px', border: '1px solid var(--border, #e2e8f0)' }}
                         placeholder="Paste QR pass token or scan with gate scanner..."
                         value={token}
                         onChange={e => setToken(e.target.value)}
@@ -897,7 +979,7 @@ export default function SecurityScanner() {
                               {p.studentName || 'Unknown Student'} ({p.rollNo || 'N/A'})
                             </div>
                             <div style={{ fontSize: '13px', color: '#64748b' }}>
-                              <strong style={{color: '#475569'}}>Ref ID:</strong> {(p.referenceId || '').replace(/^PERM-/i, 'KDP-') || 'N/A'} &middot; Out: {p.outDate ? formatDate(p.outDate) : 'N/A'}, {p.outTime || 'N/A'}
+                              <strong style={{color: '#475569'}}>Ref ID:</strong> {(p.referenceId || '').replace(/^PERM-/i, 'KDP-') || 'N/A'} &middot; Out: {p.outDate ? formatDate(p.outDate) : 'N/A'}, {formatTime12(p.outTime) || 'N/A'}
                             </div>
                           </div>
                           <button
@@ -1025,4 +1107,3 @@ export default function SecurityScanner() {
     </DashboardLayout>
   );
 }
-

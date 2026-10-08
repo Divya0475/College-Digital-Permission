@@ -9,6 +9,55 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 
+const QR_TOKEN_ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
+
+const createQRToken = () => {
+  const suffix = Array.from(
+    { length: 6 },
+    () => QR_TOKEN_ALPHABET[crypto.randomInt(QR_TOKEN_ALPHABET.length)]
+  ).join('');
+  return `SVT-${suffix}`;
+};
+
+const createUniqueQRPass = async (requestId, expiresAt) => {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    try {
+      const qrPass = await QRPass.create({
+        requestId,
+        token: createQRToken(),
+        expiresAt
+      });
+      return qrPass.token;
+    } catch (error) {
+      const duplicateToken =
+        error?.code === 11000 &&
+        (error.keyPattern?.token || error.keyValue?.token);
+      if (!duplicateToken) throw error;
+    }
+  }
+
+  throw new Error('Could not generate a unique QR pass token after multiple attempts.');
+};
+
+const ensureCurrentQRTokenFormat = async (qrPass) => {
+  if (/^SVT-[A-Z0-9]{6}$/.test(qrPass.token)) return false;
+
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    qrPass.token = createQRToken();
+    try {
+      await qrPass.save();
+      return true;
+    } catch (error) {
+      const duplicateToken =
+        error?.code === 11000 &&
+        (error.keyPattern?.token || error.keyValue?.token);
+      if (!duplicateToken) throw error;
+    }
+  }
+
+  throw new Error('Could not replace the legacy QR token with a unique token.');
+};
+
 
 // ─────────────────────────────────────────────────────────────
 // FILE UPLOAD
@@ -678,9 +727,6 @@ exports.approveRequest = async (req, res) => {
       newStatus === 'ISSUED'
     ) {
 
-      const token =
-        crypto.randomUUID();
-
       const expiresAt =
         new Date(request.outDate);
 
@@ -691,22 +737,7 @@ exports.approveRequest = async (req, res) => {
         999
       );
 
-      const verifyUrl =
-        `${process.env.QR_BASE_URL ||
-        'http://localhost:5173'
-        }/api/security/verify/${token}`;
-
-      await QRPass.create({
-        requestId:
-          request._id,
-
-        token,
-
-        expiresAt
-      });
-
-      request.qrToken =
-        token;
+      request.qrToken = await createUniqueQRPass(request._id, expiresAt);
     }
 
     await request.save();
@@ -1132,6 +1163,12 @@ exports.getQRImage = async (req, res) => {
 
     const qrPass = await QRPass.findOne({ requestId: request._id });
     if (!qrPass) return res.status(404).json({ success: false, message: 'QR pass not found' });
+
+    const tokenUpdated = await ensureCurrentQRTokenFormat(qrPass);
+    if (tokenUpdated) {
+      request.qrToken = qrPass.token;
+      await request.save();
+    }
 
     const verifyUrl = `${process.env.QR_BASE_URL || 'http://localhost:5173'}/verify/${qrPass.token}`;
     const qrImage = await QRCode.toDataURL(verifyUrl, { width: 300, margin: 2 });

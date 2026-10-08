@@ -1,10 +1,13 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/DashboardLayout';
 import StatusBadge from '../components/StatusBadge';
 import api from '../lib/api';
+import { formatDate, formatDuration, formatTime12, getOrdinalYear } from '../lib/utils';
 import toast from 'react-hot-toast';
+import jsPDF from 'jspdf';
 import {
   ArrowLeft,
   QrCode,
@@ -65,7 +68,7 @@ const getDocumentUrl = (documentUrl) => {
   if (!documentUrl) return '';
 
   // If the backend already returned a complete URL, use it directly.
-  if (/^https?:\/\//i.test(documentUrl)) {
+  if (/^(https?:|data:|blob:)/i.test(documentUrl)) {
     return documentUrl;
   }
 
@@ -144,7 +147,7 @@ function Timeline({ steps, status, request }) {
                       </span>
                     )}
                     <span>by <strong>{step.approverUserId?.name || 'Authorized Staff'}</strong></span>
-                    <span>Â·</span>
+                    <span>&middot;</span>
                     <span>{new Date(step.decidedAt).toLocaleString('en-IN')}</span>
                   </div>
                   {step.remarks && (
@@ -232,7 +235,6 @@ export default function RequestDetail() {
       outDate: req.outDate ? new Date(req.outDate).toISOString().split('T')[0] : '',
       outTime: req.outTime || '17:00',
       expectedReturnDate: req.expectedReturnDate ? new Date(req.expectedReturnDate).toISOString().split('T')[0] : '',
-      expectedReturnTime: req.expectedReturnTime || '20:00',
       emergencyContact: req.emergencyContact || '',
       startDate: req.startDate ? new Date(req.startDate).toISOString().split('T')[0] : '',
       endDate: req.endDate ? new Date(req.endDate).toISOString().split('T')[0] : '',
@@ -276,6 +278,13 @@ export default function RequestDetail() {
   const handleResubmitSubmit = async (e) => {
     e.preventDefault();
     setResubmitError('');
+    if (reqType === 'MESS_FEE') {
+      const amount = Number(resubmitForm.messAmount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 100000) {
+        setResubmitError('Mess fee amount must be between ₹0 and ₹1,00,000.');
+        return;
+      }
+    }
     setResubmitting(true);
     try {
       await api.post(`/outpass/${id}/resubmit`, resubmitForm);
@@ -343,8 +352,133 @@ export default function RequestDetail() {
     }
   };
 
-  const handlePrint = () => {
-    window.print();
+  const handleDownloadPermissionDocument = () => {
+    try {
+      const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 18;
+      const contentWidth = pageWidth - margin * 2;
+      let y = 20;
+
+      const addHeading = (text) => {
+        if (y > pageHeight - 28) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(12);
+        doc.setTextColor(15, 23, 42);
+        doc.text(text.toUpperCase(), margin, y);
+        y += 7;
+      };
+
+      const addRow = (label, value) => {
+        const wrapped = doc.splitTextToSize(String(value || '-'), contentWidth - 44);
+        const rowHeight = Math.max(6, wrapped.length * 5);
+        if (y + rowHeight > pageHeight - 18) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`${label}:`, margin, y);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(15, 23, 42);
+        doc.text(wrapped, margin + 44, y);
+        y += rowHeight;
+      };
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(16);
+      doc.setTextColor(15, 23, 42);
+      doc.text('COLLEGE DIGITAL PERMISSION', pageWidth / 2, y, { align: 'center' });
+      y += 7;
+      doc.setFontSize(12);
+      doc.text('& APPROVAL PLATFORM', pageWidth / 2, y, { align: 'center' });
+      y += 8;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(10);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Official Permission Confirmation · ${refId}`, pageWidth / 2, y, { align: 'center' });
+      y += 5;
+      doc.setDrawColor(148, 163, 184);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 10;
+
+      addHeading('Student Information');
+      addRow('Name', studentName);
+      addRow('Roll Number', rollNo);
+      addRow('Department', branchName);
+      addRow('Year', yearLabel);
+      addRow('Student Type', studentTypeLabel || 'Not specified');
+      y += 3;
+
+      addHeading('Permission Information');
+      addRow('Permission Type', getPermissionTypeLabel());
+      addRow('Status', request.status);
+      addRow('Reason / Purpose', request.reason);
+
+      if (reqType === 'OUTPASS') {
+        addRow('Out Date', `${formatDate(request.outDate)} at ${formatTime12(request.outTime)}`);
+        addRow('Return Date', formatDate(request.expectedReturnDate));
+        if (request.emergencyContact) addRow('Emergency Contact', request.emergencyContact);
+      } else if (reqType === 'MESS_FEE') {
+        addRow('Mess Amount', `₹${Number(request.messAmount || 0).toLocaleString('en-IN')}`);
+        addRow('Payment Status', request.paidStatus);
+        addRow('Period', formatDuration(request.startDate, request.endDate));
+      } else if (reqType === 'INTERNSHIP') {
+        addRow('Company', request.companyName);
+        addRow('Location', request.companyLocation);
+        addRow('Role', request.role);
+        addRow('Work Mode', request.internshipMode);
+        addRow('Duration', formatDuration(request.startDate, request.endDate));
+      } else if (reqType === 'LIBRARY') {
+        addRow('Access Date', formatDate(request.requestDate || request.createdAt));
+      }
+      addRow('Submitted On', formatDate(request.createdAt));
+      y += 3;
+
+      addHeading('Approval History');
+      const finalizedSteps = (approvalSteps || []).filter(step => step.role !== 'STUDENT');
+      if (finalizedSteps.length) {
+        finalizedSteps.forEach(step => {
+          const decisionDate = step.decidedAt
+            ? new Date(step.decidedAt).toLocaleString('en-GB')
+            : 'Date not recorded';
+          addRow(step.role, `${step.decision || 'Recorded'} · ${decisionDate}`);
+        });
+      } else {
+        addRow('Approval', 'Digitally recorded by the college authority.');
+      }
+
+      const qrDataUrl = qrImage?.qrImage;
+      if (
+        reqType === 'OUTPASS' &&
+        typeof qrDataUrl === 'string' &&
+        /^data:image\/(png|jpeg);base64,/i.test(qrDataUrl)
+      ) {
+        y += 3;
+        addHeading('Security Verification');
+        if (y + 48 > pageHeight - 18) {
+          doc.addPage();
+          y = 20;
+        }
+        doc.addImage(qrDataUrl, /^data:image\/jpeg/i.test(qrDataUrl) ? 'JPEG' : 'PNG', margin, y, 42, 42);
+        y += 46;
+      }
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Generated ${new Date().toLocaleString('en-GB')}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      const safeReference = String(refId).replace(/[^a-z0-9-]/gi, '-');
+      doc.save(`Permission-Confirmation-${safeReference}.pdf`);
+    } catch (error) {
+      console.error('Failed to generate permission confirmation PDF:', error);
+      toast.error('Could not download the permission document. Please try again.');
+    }
   };
 
   if (loading) return (
@@ -403,6 +537,19 @@ export default function RequestDetail() {
 
   // Compute clean Reference ID
   const refId = (request.referenceId || `KDP-${new Date(request.createdAt).getFullYear()}-${request._id.toString().slice(-6).toUpperCase()}`).replace(/^PERM-/i, 'KDP-');
+  const studentType = String(
+    request.studentId?.studentType ||
+    request.studentId?.studentCategory ||
+    request.studentType ||
+    ''
+  ).toUpperCase();
+  const studentTypeLabel = studentType.includes('HOSTEL')
+    ? 'Hosteller'
+    : studentType.includes('DAY')
+      ? 'Day Scholar'
+      : '';
+  const yearValue = request.year || request.studentId?.year || request.studentId?.yearTier;
+  const yearLabel = getOrdinalYear(yearValue) || yearValue || 'Not specified';
 
   // Permission type label
   const getPermissionTypeLabel = () => {
@@ -495,7 +642,7 @@ export default function RequestDetail() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+      <div className="request-detail-grid" style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '24px' }}>
         {/* Left Column: Permission Details & Attachments */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div className="card">
@@ -511,14 +658,18 @@ export default function RequestDetail() {
               <Row icon={Sparkles} label="Reference ID" value={<code>{refId}</code>} />
               <Row icon={User} label="Student Name" value={`${studentName} (${rollNo})`} />
               <Row icon={Building} label="Department" value={branchName} />
-              <Row icon={Calendar} label="Academic Year" value={`Year ${request.year || 4}`} />
+              <Row icon={Calendar} label="Academic Year" value={yearLabel} />
+              {studentTypeLabel && <Row icon={Home} label="Student Type" value={studentTypeLabel} />}
               <Row icon={FileText} label="Reason / Purpose" value={reasonDisplay} />
 
               {/* OUTPASS specifics */}
               {reqType === 'OUTPASS' && (
                 <>
-                  <Row icon={Calendar} label="Out Date & Time" value={`${new Date(request.outDate).toLocaleDateString('en-IN')} at ${request.outTime}`} />
-                  <Row icon={Clock} label="Return Date & Time" value={`${new Date(request.expectedReturnDate).toLocaleDateString('en-IN')} at ${request.expectedReturnTime}`} />
+                  <Row icon={Calendar} label="Out Date & Time" value={`${formatDate(request.outDate)} at ${formatTime12(request.outTime)}`} />
+                  <Row icon={Clock} label="Return Date" value={formatDate(request.expectedReturnDate)} />
+                  {request.expectedReturnTime && request.expectedReturnTime !== '20:00' && (
+                    <Row icon={Clock} label="Return Time" value={formatTime12(request.expectedReturnTime)} />
+                  )}
                   {request.emergencyContact && (
                     <Row icon={Phone} label="Emergency Contact" value={request.emergencyContact} />
                   )}
@@ -528,9 +679,9 @@ export default function RequestDetail() {
               {/* MESS_FEE specifics */}
               {reqType === 'MESS_FEE' && (
                 <>
-                  <Row icon={IndianRupee} label="Mess Amount" value={`₹${request.messAmount?.toLocaleString('en-IN') || 0}`} />
+                  <Row icon={IndianRupee} label="Mess Amount" value={`₹${Number(request.messAmount || 0).toLocaleString('en-IN')}`} />
                   <Row icon={CheckCircle2} label="Payment Status" value={request.paidStatus} />
-                  <Row icon={Calendar} label="Period Range" value={`${new Date(request.startDate).toLocaleDateString('en-IN')} to ${new Date(request.endDate).toLocaleDateString('en-IN')}`} />
+                  <Row icon={Calendar} label="Period Range" value={formatDuration(request.startDate, request.endDate)} />
                 </>
               )}
 
@@ -541,13 +692,13 @@ export default function RequestDetail() {
                   <Row icon={MapPin} label="Company Location" value={request.companyLocation} />
                   <Row icon={Briefcase} label="Internship Role" value={request.role} />
                   <Row icon={Laptop} label="Work Mode" value={request.internshipMode} />
-                  <Row icon={Calendar} label="Duration" value={`${new Date(request.startDate).toLocaleDateString('en-IN')} to ${new Date(request.endDate).toLocaleDateString('en-IN')}`} />
+                  <Row icon={Calendar} label="Duration" value={formatDuration(request.startDate, request.endDate)} />
                 </>
               )}
 
               {/* LIBRARY specifics */}
               {reqType === 'LIBRARY' && (
-                <Row icon={Calendar} label="Access Date" value={new Date(request.requestDate || request.createdAt).toLocaleDateString('en-IN')} />
+                <Row icon={Calendar} label="Access Date" value={formatDate(request.requestDate || request.createdAt)} />
               )}
 
               {/* Attached Document Row */}
@@ -587,7 +738,7 @@ export default function RequestDetail() {
           </div>
 
           {/* QR Code Pass Card for Outpass */}
-          {reqType === 'OUTPASS' && request.status === 'ISSUED' && user?.role !== 'CTPO' && (
+          {reqType === 'OUTPASS' && request.status === 'ISSUED' && user?.role !== 'CTPO' && user?.role !== 'HOD' && (
             <div className="card" style={{ textAlign: 'center', border: '1px solid var(--green)' }}>
               <div className="card-title" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', color: 'var(--green)' }}>
                 <QrCode size={20} />
@@ -997,27 +1148,15 @@ export default function RequestDetail() {
                       />
                     </div>
                   </div>
-                  <div className="form-grid" style={{ marginBottom: '12px' }}>
-                    <div className="form-group">
-                      <label className="form-label">Return Date</label>
-                      <input
-                        type="date"
-                        required
-                        className="form-input"
-                        value={resubmitForm.expectedReturnDate}
-                        onChange={e => setResubmitForm(f => ({ ...f, expectedReturnDate: e.target.value }))}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Return Time</label>
-                      <input
-                        type="time"
-                        required
-                        className="form-input"
-                        value={resubmitForm.expectedReturnTime}
-                        onChange={e => setResubmitForm(f => ({ ...f, expectedReturnTime: e.target.value }))}
-                      />
-                    </div>
+                  <div className="form-group" style={{ marginBottom: '12px' }}>
+                    <label className="form-label">Return Date</label>
+                    <input
+                      type="date"
+                      required
+                      className="form-input"
+                      value={resubmitForm.expectedReturnDate}
+                      onChange={e => setResubmitForm(f => ({ ...f, expectedReturnDate: e.target.value }))}
+                    />
                   </div>
                   <div className="form-group" style={{ marginBottom: '12px' }}>
                     <label className="form-label">Emergency Contact Number</label>
@@ -1051,10 +1190,16 @@ export default function RequestDetail() {
                       <input
                         type="number"
                         required
+                        min="0"
+                        max="100000"
+                        step="100"
                         className="form-input"
                         value={resubmitForm.messAmount}
                         onChange={e => setResubmitForm(f => ({ ...f, messAmount: e.target.value }))}
                       />
+                      <small style={{ display: 'block', marginTop: 5, color: '#64748b' }}>
+                        Maximum allowed: ₹1,00,000
+                      </small>
                     </div>
                     <div className="form-group">
                       <label className="form-label">Payment Status</label>
@@ -1239,9 +1384,10 @@ export default function RequestDetail() {
 
       {/* â”€â”€â”€ Official Digital Permission Document Modal (Exact Replica of Sample) â”€â”€â”€ */}
       {printModalOpen && (
-        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setPrintModalOpen(false)}>
-          <div className="modal" style={{ maxWidth: '640px', padding: '24px', background: '#ffffff' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+        createPortal(
+        <div className="modal-overlay permission-slip-overlay" onClick={(e) => e.target === e.currentTarget && setPrintModalOpen(false)}>
+          <div className="modal permission-slip-modal" style={{ maxWidth: '640px', maxHeight: '90vh', overflow: 'hidden', padding: '24px', background: '#ffffff', display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Printer size={18} color="var(--accent)" />
                 <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary)' }}>
@@ -1258,11 +1404,13 @@ export default function RequestDetail() {
             </div>
 
             {/* Printable Document Sheet matching user's exact uploaded sample */}
-            <div ref={printRef} className="official-permission-doc" style={{
+            <div ref={printRef} className="official-permission-doc permission-slip-document" style={{
               background: '#ffffff',
               border: '1.5px solid #0f172a',
               borderRadius: '6px',
               padding: '28px 32px',
+              maxHeight: 'calc(90vh - 150px)',
+              overflowY: 'auto',
               color: '#0f172a',
               fontFamily: 'Inter, system-ui, -apple-system, sans-serif'
             }}>
@@ -1287,7 +1435,8 @@ export default function RequestDetail() {
                   <div><strong>Name:</strong> {studentName}</div>
                   <div><strong>Roll Number:</strong> {rollNo}</div>
                   <div><strong>Department:</strong> {branchName}</div>
-                  <div><strong>Year:</strong> {request.year || 4}</div>
+                  <div><strong>Year:</strong> {yearLabel}</div>
+                  <div><strong>Student Type:</strong> {studentTypeLabel || 'Not specified'}</div>
                 </div>
               </div>
 
@@ -1304,7 +1453,7 @@ export default function RequestDetail() {
 
                   {reqType === 'OUTPASS' && (
                     <>
-                      <div><strong>Date:</strong> {new Date(request.outDate).toLocaleDateString('en-GB')} ({request.outTime} to {request.expectedReturnTime})</div>
+                      <div><strong>Date:</strong> {formatDate(request.outDate)} at {formatTime12(request.outTime)}{request.expectedReturnTime && request.expectedReturnTime !== '20:00' ? ` to ${formatTime12(request.expectedReturnTime)}` : ''}</div>
                       {request.emergencyContact && (
                         <div><strong>Emergency Contact:</strong> {request.emergencyContact}</div>
                       )}
@@ -1313,8 +1462,8 @@ export default function RequestDetail() {
 
                   {reqType === 'MESS_FEE' && (
                     <>
-                      <div><strong>Date:</strong> {new Date(request.startDate).toLocaleDateString('en-GB')} to {new Date(request.endDate).toLocaleDateString('en-GB')}</div>
-                      <div><strong>Mess Amount:</strong> â‚¹{request.messAmount?.toLocaleString('en-IN')}</div>
+                      <div><strong>Date:</strong> {formatDuration(request.startDate, request.endDate)}</div>
+                      <div><strong>Mess Amount:</strong> ₹{Number(request.messAmount || 0).toLocaleString('en-IN')}</div>
                       <div><strong>Payment Status:</strong> {request.paidStatus}</div>
                     </>
                   )}
@@ -1323,12 +1472,12 @@ export default function RequestDetail() {
                     <>
                       <div><strong>Company:</strong> {request.companyName} ({request.companyLocation})</div>
                       <div><strong>Role & Mode:</strong> {request.role} ({request.internshipMode})</div>
-                      <div><strong>Duration:</strong> {new Date(request.startDate).toLocaleDateString('en-GB')} to {new Date(request.endDate).toLocaleDateString('en-GB')}</div>
+                      <div><strong>Duration:</strong> {formatDuration(request.startDate, request.endDate)}</div>
                     </>
                   )}
 
                   {reqType === 'LIBRARY' && (
-                    <div><strong>Date:</strong> {new Date(request.requestDate || request.createdAt).toLocaleDateString('en-GB')}</div>
+                    <div><strong>Date:</strong> {formatDate(request.requestDate || request.createdAt)}</div>
                   )}
                 </div>
               </div>
@@ -1404,68 +1553,91 @@ export default function RequestDetail() {
             </div>
 
             {/* Modal Controls */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px' }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '16px', paddingTop: '12px', background: '#ffffff', flexShrink: 0 }}>
               <button className="btn btn-ghost" onClick={() => setPrintModalOpen(false)}>Close</button>
-              <button className="btn btn-primary" onClick={handlePrint} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+              <button className="btn btn-primary" onClick={handleDownloadPermissionDocument} style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
                 <Printer size={15} />
-                <span>Print / Save as PDF</span>
+                <span>Download PDF</span>
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
+        )
       )}
 
       {/* Document View Modal */}
-      {documentModalOpen && request.documentUrl && (
-        <div
-          className="modal-overlay"
-          onClick={(e) => { if (e.target === e.currentTarget) setDocumentModalOpen(false); }}
-          style={{ zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <div className="modal" style={{ width: 'min(900px, 95vw)', height: 'min(90vh, 800px)', padding: '20px', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-              <div style={{ fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <FileText size={20} color="var(--accent)" />
-                <span>{request.documentName || 'Attached Document'}</span>
-              </div>
-              <button className="btn btn-ghost" onClick={() => setDocumentModalOpen(false)} style={{ padding: '6px' }}>
-                <X size={20} />
-              </button>
-            </div>
-            <div style={{ flex: 1, border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', background: '#f8fafc', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-              <img 
-                src={getDocumentUrl(request.documentUrl)} 
-                alt={request.documentName || 'Document'} 
-                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
-                onError={(e) => {
-                  e.target.style.display = 'none';
-                  e.target.nextSibling.style.display = 'flex';
-                }}
-              />
-              <div style={{ display: 'none', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '40px' }}>
-                <FileText size={48} color="#94a3b8" />
-                <span style={{ color: '#64748b' }}>Cannot preview this file type.</span>
-                <a href={getDocumentUrl(request.documentUrl)} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ marginTop: '12px' }}>
-                  Download / Open in New Tab
-                </a>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <DocumentViewer
+        isOpen={documentModalOpen}
+        onClose={() => setDocumentModalOpen(false)}
+        documentUrl={request.documentUrl}
+        documentName={request.documentName}
+      />
     </DashboardLayout>
+  );
+}
+
+function DocumentViewer({ isOpen, onClose, documentUrl, documentName }) {
+  if (!isOpen || !documentUrl) return null;
+  const resolvedUrl = getDocumentUrl(documentUrl);
+  const isPdf = /\.pdf(?:$|[?#])/i.test(`${documentName || ''} ${documentUrl}`);
+
+  return (
+    createPortal(
+    <div
+      className="modal-overlay attached-document-overlay"
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      style={{ zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <div className="modal attached-document-modal" style={{ width: 'min(900px, 95vw)', height: 'min(90vh, 800px)', padding: '20px', borderRadius: '12px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <div style={{ fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <FileText size={20} color="var(--accent)" />
+            <span>{documentName || 'Attached Document'}</span>
+          </div>
+          <button className="btn btn-ghost" onClick={onClose} style={{ padding: '6px' }}>
+            <X size={20} />
+          </button>
+        </div>
+        <div className="attached-document-content" style={{ flex: 1, minHeight: 0, border: '1px solid var(--border)', borderRadius: '8px', overflow: 'hidden', background: '#f8fafc', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+          {isPdf ? (
+            <iframe src={resolvedUrl} title={documentName || 'Attached PDF'} style={{ width: '100%', height: '100%', minHeight: 300, border: 0 }} />
+          ) : (
+            <img
+              src={resolvedUrl}
+              alt={documentName || 'Document'}
+              style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }}
+              onError={(e) => {
+                e.currentTarget.style.display = 'none';
+                e.currentTarget.nextElementSibling.style.display = 'flex';
+              }}
+            />
+          )}
+          {!isPdf && (
+            <div style={{ display: 'none', flexDirection: 'column', alignItems: 'center', gap: '12px', padding: '40px' }}>
+              <FileText size={48} color="#94a3b8" />
+              <span style={{ color: '#64748b' }}>Cannot preview this file type.</span>
+              <a href={resolvedUrl} target="_blank" rel="noopener noreferrer" className="btn btn-primary" style={{ marginTop: '12px' }}>
+                Download / Open in New Tab
+              </a>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+    )
   );
 }
 
 function Row({ icon: Icon, label, value }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-      <span style={{ minWidth: 150, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+    <div className="request-detail-row" style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <span className="request-detail-label" style={{ minWidth: 150, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
         {Icon && <Icon size={14} color="var(--accent)" />}
         <span>{label}</span>
       </span>
-      <span style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>{value || 'â€”'}</span>
+      <span className="request-detail-value" style={{ fontSize: 14, color: 'var(--text-primary)', fontWeight: 500 }}>{value || 'â€”'}</span>
     </div>
   );
 }
-

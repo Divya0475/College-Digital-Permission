@@ -1,12 +1,13 @@
 import React from 'react';
 
-const DateInput = ({ value, onChange, placeholder, style, min, max, name, required }) => {
+const DateInput = ({ value, onChange, placeholder, style, min, max, name, required, className }) => {
     const minDate = min || `2000-01-01`;
     const maxDate = max || `2100-12-31`;
 
     return (
         <input
             type="date"
+            className={className}
             name={name}
             value={value}
             min={minDate}

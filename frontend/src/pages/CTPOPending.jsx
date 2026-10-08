@@ -9,7 +9,6 @@ import {
 } from 'react-icons/fi';
 
 import DashboardLayout from '../components/DashboardLayout';
-import CTPOMobileNav from '../components/CTPOMobileNav';
 import api from '../lib/api';
 
 export default function CTPOPending() {
@@ -462,7 +461,6 @@ export default function CTPOPending() {
         <div className="ctpo-page-header">
 
           <div className="ctpo-pending-title-row">
-            <CTPOMobileNav />
             <div>
               <h1>
                 Pending Requests
@@ -887,5 +885,4 @@ export default function CTPOPending() {
     </DashboardLayout>
   );
 }
-
 

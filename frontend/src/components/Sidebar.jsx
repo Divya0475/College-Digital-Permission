@@ -41,6 +41,8 @@ const NAV_CONFIG = {
   ],
   HOSTEL_INCHARGE: [
     { label: 'Overview', icon: LayoutDashboard, path: '/hostel/dashboard' },
+    { label: 'Pending Requests', icon: Clock, path: '/hostel/dashboard?view=pending' },
+    { label: 'Review History', icon: ClipboardList, path: '/hostel/dashboard?view=history' },
   ],
   PLACEMENT_OFFICER: [
     { label: 'Overview', icon: LayoutDashboard, path: '/placement/dashboard' },
@@ -197,9 +199,18 @@ export default function Sidebar({ isOpen = false, onClose }) {
         <nav className="sidebar-nav">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isActive = item.path.includes('?') 
-                ? location.pathname + location.search === item.path
-                : location.pathname === item.path && (!location.search || !navItems.some(nav => nav.path.includes('?')));
+              const [itemPath, itemQuery = ''] = item.path.split('?');
+              const samePathItems = navItems.filter((nav) => nav.path.split('?')[0] === itemPath);
+              const isActive = samePathItems.length > 1
+                ? location.pathname === itemPath &&
+                  new URLSearchParams(location.search).get('view') ===
+                    new URLSearchParams(itemQuery).get('view')
+                : itemQuery
+                  ? location.pathname + location.search === item.path
+                  : location.pathname === itemPath && (
+                    !location.search ||
+                    !navItems.some(nav => nav.path.includes('?'))
+                  );
               return (
                 <button
                 key={item.path}
@@ -235,4 +246,3 @@ export default function Sidebar({ isOpen = false, onClose }) {
     </>
   );
 }
-

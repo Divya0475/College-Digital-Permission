@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/DashboardLayout';
 import StatusBadge from '../components/StatusBadge';
 import api from '../lib/api';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer
 } from 'recharts';
@@ -26,6 +28,9 @@ import {
   Briefcase,
   BookOpen,
   GraduationCap,
+  FileDown,
+  FileText,
+  FileSpreadsheet,
   Paperclip,
   ExternalLink
 } from 'lucide-react';
@@ -36,6 +41,29 @@ const ROLE_LABELS = {
   HOD: { name: 'HOD Approval Console', pendingStatus: 'PENDING_HOD', color: '#10b981', desc: 'Head of Department authorization for permissions & clearances' },
   HOSTEL_INCHARGE: { name: 'Hostel Incharge Dashboard', pendingStatus: 'PENDING_HOSTEL', color: '#10b981', desc: 'Final gate permission clearance for hostel students' },
   PLACEMENT_OFFICER: { name: 'Placement Officer Console', pendingStatus: 'PENDING_PLACEMENT_OFFICER', color: '#10b981', desc: 'Final institutional authorization for student internships' },
+};
+
+const isHostellerRequest = (request) => {
+  const studentType = String(
+    request?.studentId?.studentType ||
+    request?.studentId?.studentCategory ||
+    request?.studentId?.type ||
+    request?.studentType ||
+    request?.studentCategory ||
+    ''
+  ).toUpperCase();
+  if (studentType.includes('DAY')) return false;
+  if (studentType.includes('HOSTEL')) return true;
+  const isHosteller = request?.studentId?.isHosteller ?? request?.isHosteller;
+  if (typeof isHosteller === 'boolean') return isHosteller;
+  if (typeof isHosteller === 'string') return isHosteller.toLowerCase() === 'true';
+  return Boolean(
+    request?.studentId?.hostelName ||
+    request?.studentId?.hostelRoom ||
+    request?.studentId?.roomNumber ||
+    request?.hostelName ||
+    request?.hostelRoom
+  );
 };
 
 export default function ApproverDashboard() {
@@ -53,6 +81,8 @@ export default function ApproverDashboard() {
   const [typeFilter, setTypeFilter] = useState('ALL');
   const [history, setHistory] = useState([]);
   const [kpiFilter, setKpiFilter] = useState('TOTAL');
+  const [showHostelExportModal, setShowHostelExportModal] = useState(false);
+  const [hostelExportLoading, setHostelExportLoading] = useState('');
 
   const [rejectModal, setRejectModal] = useState(null); // { id, remarks, requestType }
   const [actionLoading, setActionLoading] = useState(false);
@@ -68,7 +98,7 @@ export default function ApproverDashboard() {
       const pendingData = pendingRes.data.data || [];
       setPending(
         isHostelIncharge
-          ? pendingData.filter((request) => isPendingHostelStatus(request?.status) && String(request?.requestType || '').toUpperCase() !== 'LIBRARY')
+          ? pendingData.filter((request) => isPendingHostelStatus(request?.status) && isHostellerRequest(request) && String(request?.requestType || '').toUpperCase() !== 'LIBRARY')
           : pendingData
       );
       setStats(statsRes.data.data);
@@ -239,6 +269,7 @@ export default function ApproverDashboard() {
   };
 
   const isHostelRelevantRequest = (request) => {
+    if (!isHostellerRequest(request)) return false;
     if (String(request?.requestType || '').toUpperCase() === 'LIBRARY') return false;
     const status = String(request?.status || '').toUpperCase();
     return (
@@ -248,11 +279,106 @@ export default function ApproverDashboard() {
     );
   };
 
-  const filteredHistory = history.filter(r => {
-    if (isHostelIncharge && isPendingHostelStatus(r.status)) return false;
+  const normalizeHostelRequestType = (request) => {
+    const type = String(request?.requestType || request?.type || 'OUTPASS')
+      .trim()
+      .toUpperCase()
+      .replace(/[\s-]+/g, '_');
+
+    if (type === 'MESS') return 'MESS_FEE';
+    if (type === 'OUT_PASS') return 'OUTPASS';
+    return type;
+  };
+
+  const hostelReviewHistory = history.filter((request) =>
+    isHostelRelevantRequest(request) && !isPendingHostelStatus(request.status)
+  );
+
+  const filteredHistory = (isHostelIncharge ? hostelReviewHistory : history).filter(r => {
     if (typeFilter === 'ALL') return true;
-    return (r.requestType || 'OUTPASS') === typeFilter;
+    return isHostelIncharge
+      ? normalizeHostelRequestType(r) === typeFilter
+      : (r.requestType || 'OUTPASS') === typeFilter;
   });
+
+  const hostelHistoryStats = (() => {
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - ((weekStart.getDay() + 6) % 7));
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const countSince = (start) => hostelReviewHistory.filter((request) => {
+      const date = new Date(request.createdAt || request.updatedAt || 0);
+      return !Number.isNaN(date.getTime()) && date >= start;
+    }).length;
+    return { week: countSince(weekStart), month: countSince(monthStart) };
+  })();
+
+  const getHostelHistoryExportRows = () =>
+    filteredHistory.map((request) => [
+      request.referenceId || request._id,
+      request.studentId?.name || '',
+      request.studentId?.rollNo || '',
+      getBadgeTypeLabel(normalizeHostelRequestType(request)),
+      request.reason || '',
+      request.createdAt ? new Date(request.createdAt).toLocaleDateString('en-IN') : '',
+      isRejectedHostelStatus(request.status) ? 'Rejected' : 'Approved',
+    ]);
+
+  const exportHostelHistoryCSV = () => {
+    setHostelExportLoading('csv');
+    try {
+      const quote = (value) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+      const rows = getHostelHistoryExportRows();
+      const csv = [
+        ['Reference ID', 'Student', 'Roll Number', 'Type', 'Reason', 'Submitted On', 'Status'].map(quote).join(','),
+        ...rows.map((row) => row.map(quote).join(',')),
+      ].join('\r\n');
+      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `hostel-${typeFilter.toLowerCase()}-review-history-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setShowHostelExportModal(false);
+    } catch (error) {
+      console.error('Hostel CSV export failed:', error);
+      setActionMsg('Unable to generate the CSV report.');
+    } finally {
+      setHostelExportLoading('');
+    }
+  };
+
+  const exportHostelHistoryPDF = () => {
+    setHostelExportLoading('pdf');
+    try {
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+      doc.setFontSize(18);
+      doc.text('Hostel In-charge Review History', 14, 17);
+      doc.setFontSize(10);
+      doc.text(`Permission type: ${typeFilter === 'ALL' ? 'All Types' : getBadgeTypeLabel(typeFilter)}`, 14, 25);
+      doc.text(`Reviewed requests: ${filteredHistory.length}`, 14, 31);
+      doc.text(`This week: ${hostelHistoryStats.week}  |  This month: ${hostelHistoryStats.month}`, 14, 37);
+
+      autoTable(doc, {
+        startY: 44,
+        head: [['Reference ID', 'Student', 'Roll Number', 'Type', 'Reason', 'Submitted On', 'Status']],
+        body: getHostelHistoryExportRows(),
+        styles: { fontSize: 8, cellPadding: 2 },
+        headStyles: { fillColor: [16, 185, 129] },
+      });
+
+      doc.save(`hostel-${typeFilter.toLowerCase()}-review-history-${new Date().toISOString().slice(0, 10)}.pdf`);
+      setShowHostelExportModal(false);
+    } catch (error) {
+      console.error('Hostel PDF export failed:', error);
+      setActionMsg('Unable to generate the PDF report.');
+    } finally {
+      setHostelExportLoading('');
+    }
+  };
 
   // Hostel In-charge specific derivations.
   const hostelAllRequests = Array.from(
@@ -332,17 +458,6 @@ export default function ApproverDashboard() {
       hostelBaseData = hostelAllRequests;
     }
   }
-
-  const normalizeHostelRequestType = (request) => {
-    const type = String(request?.requestType || request?.type || 'OUTPASS')
-      .trim()
-      .toUpperCase()
-      .replace(/[\s-]+/g, '_');
-
-    if (type === 'MESS') return 'MESS_FEE';
-    if (type === 'OUT_PASS') return 'OUTPASS';
-    return type;
-  };
 
   const filteredHostelData = hostelBaseData.filter(r => {
     if (typeFilter === 'ALL') return true;
@@ -544,8 +659,7 @@ export default function ApproverDashboard() {
 
       {/* Main Tabs (Pending vs History) & Feature Filter Pills */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px', marginBottom: '16px' }}>
-        {!isHostelIncharge && (
-          <div className="tabs" style={{ marginBottom: 0 }}>
+        {!isHostelIncharge && <div className="tabs" style={{ marginBottom: 0 }}>
             <button
               className={`tab ${isHostelIncharge ? (tab === 'overview' ? 'active' : '') : (tab === 'pending' ? 'active' : '')}`}
               onClick={() => {
@@ -590,13 +704,12 @@ export default function ApproverDashboard() {
               <ClipboardList size={14} />
               <span>Review History</span>
             </button>
-          </div>
-        )}
+        </div>}
 
         {/* Feature Filter Pills */}
         <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
           {(isHostelIncharge
-            ? ['ALL', 'OUTPASS', 'MESS_FEE', 'INTERNSHIP']
+            ? ['ALL', 'OUTPASS', 'INTERNSHIP']
             : ['ALL', 'OUTPASS', 'MESS_FEE', 'INTERNSHIP', 'LIBRARY']
           ).map(f => (
             <button
@@ -834,6 +947,34 @@ export default function ApproverDashboard() {
       {/* History Tab */}
       {tab === 'history' && (
         <div className="card">
+          {isHostelIncharge && (
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
+              <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', color: 'var(--text-secondary)', fontSize: 13 }}>
+                <span>This week: <strong>{hostelHistoryStats.week}</strong></span>
+                <span>This month: <strong>{hostelHistoryStats.month}</strong></span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => setShowHostelExportModal(true)}
+                disabled={filteredHistory.length === 0}
+                style={{
+                  height: 36,
+                  padding: '0 14px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 6,
+                  fontSize: 13,
+                  whiteSpace: 'nowrap',
+                  borderRadius: 6,
+                }}
+              >
+                <FileDown size={16} />
+                Export report
+              </button>
+            </div>
+          )}
           {filteredHistory.length === 0 ? (
             <div className="empty-state">
               <div className="empty-state-icon" style={{ color: 'var(--text-muted)' }}>
@@ -930,6 +1071,93 @@ export default function ApproverDashboard() {
         </div>
       )}
 
+      {isHostelIncharge && showHostelExportModal && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            background: 'rgba(15,23,42,0.45)',
+            backdropFilter: 'blur(3px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 20,
+          }}
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !hostelExportLoading) {
+              setShowHostelExportModal(false);
+            }
+          }}
+        >
+          <div className="card" style={{ width: '100%', maxWidth: 490, padding: 20, boxShadow: '0 20px 60px rgba(0,0,0,0.18)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <div style={{ width: 35, height: 35, borderRadius: 9, background: 'var(--accent-dim)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <FileDown size={18} />
+                </div>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: 17, fontWeight: 800, color: 'var(--text)' }}>Export Report</h2>
+                  <p style={{ margin: '3px 0 0', fontSize: 10, color: 'var(--text-muted)' }}>
+                    Choose a format to download review history.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                aria-label="Close export dialog"
+                disabled={Boolean(hostelExportLoading)}
+                onClick={() => setShowHostelExportModal(false)}
+                style={{ border: 'none', background: '#f3f4f6', width: 29, height: 29, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#6b7280' }}
+              >
+                <X size={15} />
+              </button>
+            </div>
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: 9, padding: 12, marginBottom: 15 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Report Period</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>
+                    {typeFilter === 'ALL' ? 'All Types' : getBadgeTypeLabel(typeFilter)}
+                  </span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', marginBottom: 2 }}>Total Requests</span>
+                  <span style={{ fontSize: 12, fontWeight: 600, color: '#334155' }}>{filteredHistory.length}</span>
+                </div>
+              </div>
+            </div>
+
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginBottom: 16 }}>
+              Choose a format to download your report:
+            </p>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={exportHostelHistoryPDF}
+                disabled={Boolean(hostelExportLoading) || filteredHistory.length === 0}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '16px 12px', height: 'auto', justifyContent: 'center', borderColor: '#e2e8f0', color: '#334155' }}
+              >
+                {hostelExportLoading === 'pdf' ? <span className="spinner" /> : <FileText size={24} color="#dc2626" />}
+                <span style={{ fontWeight: 600 }}>Download PDF</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={exportHostelHistoryCSV}
+                disabled={Boolean(hostelExportLoading) || filteredHistory.length === 0}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: '16px 12px', height: 'auto', justifyContent: 'center', borderColor: '#e2e8f0', color: '#334155' }}
+              >
+                {hostelExportLoading === 'csv' ? <span className="spinner" /> : <FileSpreadsheet size={24} color="#16a34a" />}
+                <span style={{ fontWeight: 600 }}>Download CSV</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Reject Modal */}
       {rejectModal && (
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setRejectModal(null)}>
@@ -993,4 +1221,3 @@ export default function ApproverDashboard() {
     </DashboardLayout>
   );
 }
-

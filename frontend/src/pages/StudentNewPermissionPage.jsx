@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import StudentLayout from '../components/StudentLayout';
+import DateInput from '../components/DateInput';
+import TimeInput12 from '../components/TimeInput12';
 import api from '../lib/api';
+import { formatTime12 } from '../lib/utils';
 import {
   FileText,
   Calendar,
@@ -72,19 +75,18 @@ const getInitialFormState = () => ({
   documentUrl: '',
   documentName: '',
   emergencyContact: '',
-  outDate: new Date().toISOString().split('T')[0],
+  outDate: '',
   outTime: '17:00',
-  expectedReturnDate: new Date().toISOString().split('T')[0],
-  expectedReturnTime: '20:00',
-  startDate: new Date().toISOString().split('T')[0],
-  endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  expectedReturnDate: '',
+  startDate: '',
+  endDate: '',
   messAmount: '',
   paidStatus: 'Paid',
   companyName: '',
   companyLocation: '',
   role: '',
   internshipMode: 'Offline',
-  requestDate: new Date().toISOString().split('T')[0]
+  requestDate: ''
 });
 
 const getPermissionFormState = (tab) => ({
@@ -94,19 +96,18 @@ const getPermissionFormState = (tab) => ({
   documentUrl: '',
   documentName: '',
   emergencyContact: '',
-  outDate: new Date().toISOString().split('T')[0],
+  outDate: '',
   outTime: '17:00',
-  expectedReturnDate: new Date().toISOString().split('T')[0],
-  expectedReturnTime: '20:00',
-  startDate: new Date().toISOString().split('T')[0],
-  endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+  expectedReturnDate: '',
+  startDate: '',
+  endDate: '',
   messAmount: '',
   paidStatus: 'Paid',
   companyName: '',
   companyLocation: '',
   role: '',
   internshipMode: 'Offline',
-  requestDate: new Date().toISOString().split('T')[0]
+  requestDate: ''
 });
 
 const PERMISSION_META = {
@@ -152,6 +153,14 @@ export default function StudentNewPermissionPage() {
   const [activeTab, setActiveTab] = useState('OUTPASS');
   const [form, setForm] = useState(() => getInitialFormState());
   const activePermission = PERMISSION_META[activeTab] || PERMISSION_META.OUTPASS;
+  const studentType = String(user?.studentType || user?.studentCategory || '').toUpperCase();
+  const registeredStudentType = studentType.includes('HOSTEL')
+    ? 'HOSTELLER'
+    : studentType.includes('DAY')
+      ? 'DAY_SCHOLAR'
+      : '';
+  const [displayStudentType, setDisplayStudentType] = useState(registeredStudentType || 'DAY_SCHOLAR');
+  const activeDisplayStudentType = displayStudentType || registeredStudentType;
 
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -220,6 +229,18 @@ export default function StudentNewPermissionPage() {
     setError('');
     setSuccess('');
 
+    if (activeTab === 'MESS_FEE') {
+      const amount = Number(form.messAmount);
+      if (!Number.isFinite(amount) || amount < 0 || amount > 100000) {
+        setError('Mess fee amount must be between ₹0 and ₹1,00,000.');
+        return;
+      }
+      if (amount % 100 !== 0) {
+        setError('Please enter the mess fee in increments of ₹100.');
+        return;
+      }
+    }
+
     if (
       activeTab === 'MESS_FEE' &&
       (!form.documentUrl || !form.documentName)
@@ -244,16 +265,38 @@ export default function StudentNewPermissionPage() {
         return;
       }
 
+      if (!form.expectedReturnDate) {
+        setError('Please select a return date.');
+        return;
+      }
+
+      if (form.outDate < getTodayDateString()) {
+        setError('Out-Pass date cannot be in the past.');
+        return;
+      }
+
       dateError = validateLeaveDateRange(
         form.outDate,
         form.expectedReturnDate
       );
     } else if (activeTab === 'LIBRARY') {
+      if (form.requestDate !== getTodayDateString()) {
+        setError('Library access date must be today.');
+        return;
+      }
       dateError = validateLeaveDateRange(
         form.requestDate,
         form.requestDate
       );
     } else {
+      if (activeTab === 'INTERNSHIP' && form.startDate < getTodayDateString()) {
+        setError('Internship start date cannot be in the past.');
+        return;
+      }
+      if (activeTab === 'INTERNSHIP' && !form.endDate) {
+        setError('Please select an internship end date.');
+        return;
+      }
       dateError = validateLeaveDateRange(
         form.startDate,
         form.endDate
@@ -348,6 +391,25 @@ export default function StudentNewPermissionPage() {
               >
                 {activeTab === 'OUTPASS' && (
                   <>
+                    <div className="s-student-outpass-profile">
+                      <div className="s-student-type-picker" role="group" aria-label="Student type">
+                        {[
+                          { value: 'DAY_SCHOLAR', label: 'Day Scholar' },
+                          { value: 'HOSTELLER', label: 'Hosteller' }
+                        ].map(({ value, label }) => (
+                          <button
+                            key={value}
+                            type="button"
+                            className={`s-student-type-option${value === 'DAY_SCHOLAR' ? ' day-scholar' : ''}${activeDisplayStudentType === value ? ' active' : ''}`}
+                            aria-pressed={activeDisplayStudentType === value}
+                            onClick={() => setDisplayStudentType(value)}
+                          >
+                            {value === 'DAY_SCHOLAR' ? <Home size={15} /> : <Building size={15} />}
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     {/* CHANGE 1: 2 -> 1 */}
                     <div style={{ marginBottom: '20px' }}>
                       <div
@@ -453,8 +515,7 @@ export default function StudentNewPermissionPage() {
                             Out Date
                           </label>
 
-                          <input
-                            type="date"
+                          <StudentDateInput
                             required
                             className="s-form-input"
                             min={getTodayDateString()}
@@ -506,11 +567,10 @@ export default function StudentNewPermissionPage() {
                               size={13}
                               color="#10b981"
                             />
-                            Out Time
+                            Out Time (AM/PM)
                           </label>
 
-                          <input
-                            type="time"
+                          <TimeInput12
                             required
                             className="s-form-input"
                             value={form.outTime}
@@ -529,6 +589,11 @@ export default function StudentNewPermissionPage() {
                               width: '100%'
                             }}
                           />
+                          {form.outTime && (
+                            <div style={{ marginTop: 5, fontSize: 12, color: '#64748b' }}>
+                              Selected time: {formatTime12(form.outTime)}
+                            </div>
+                          )}
                         </div>
 
                         <div
@@ -554,8 +619,7 @@ export default function StudentNewPermissionPage() {
                             Return Date
                           </label>
 
-                          <input
-                            type="date"
+                          <StudentDateInput
                             required
                             className="s-form-input"
                             min={
@@ -775,8 +839,7 @@ export default function StudentNewPermissionPage() {
                                 Entry Date
                               </label>
 
-                              <input
-                                type="date"
+                              <StudentDateInput
                                 required
                                 className="s-form-input"
                                 value={form.startDate}
@@ -832,8 +895,7 @@ export default function StudentNewPermissionPage() {
                                 Vacating Date
                               </label>
 
-                              <input
-                                type="date"
+                              <StudentDateInput
                                 required
                                 className="s-form-input"
                                 value={form.endDate}
@@ -868,6 +930,9 @@ export default function StudentNewPermissionPage() {
                                   width: '100%'
                                 }}
                               />
+                              <small className="s-date-format-hint">
+                                End date must be on or after the start date.
+                              </small>
                             </div>
                           </div>
                         )}
@@ -897,16 +962,21 @@ export default function StudentNewPermissionPage() {
                                 type="number"
                                 required
                                 min="0"
-                                step="1"
+                                max="100000"
+                                step="100"
+                                inputMode="numeric"
                                 placeholder="e.g. 5200"
                                 className="s-form-input"
                                 value={form.messAmount}
-                                onChange={e =>
-                                  setForm(f => ({
-                                    ...f,
-                                    messAmount: e.target.value
-                                  }))
-                                }
+                                onChange={e => {
+                                  const value = e.target.value;
+                                  if (value === '' || Number(value) <= 100000) {
+                                    setForm(f => ({
+                                      ...f,
+                                      messAmount: value
+                                    }));
+                                  }
+                                }}
                                 style={{
                                   borderRadius: '10px',
                                   padding: '10px 12px',
@@ -916,6 +986,11 @@ export default function StudentNewPermissionPage() {
                                   width: '100%'
                                 }}
                               />
+                              {form.messAmount !== '' && Number.isFinite(Number(form.messAmount)) && (
+                                <small className="s-currency-preview">
+                                  Amount: ₹{new Intl.NumberFormat('en-IN').format(Number(form.messAmount))}
+                                </small>
+                              )}
                             </div>
 
                             <div>
@@ -1340,8 +1415,7 @@ export default function StudentNewPermissionPage() {
                                 Internship Start Date
                               </label>
 
-                              <input
-                                type="date"
+                              <StudentDateInput
                                 required
                                 className="s-form-input"
                                 min={getTodayDateString()}
@@ -1398,8 +1472,7 @@ export default function StudentNewPermissionPage() {
                                 Internship End Date
                               </label>
 
-                              <input
-                                type="date"
+                              <StudentDateInput
                                 required
                                 className="s-form-input"
                                 min={
@@ -1438,6 +1511,9 @@ export default function StudentNewPermissionPage() {
                                   width: '100%'
                                 }}
                               />
+                              <small className="s-date-format-hint">
+                                Required; same day as or after the start date.
+                              </small>
                             </div>
                           </div>
                         )
@@ -1757,10 +1833,11 @@ export default function StudentNewPermissionPage() {
                             Access Date
                           </label>
 
-                          <input
-                            type="date"
+                          <StudentDateInput
                             required
                             className="s-form-input"
+                            min={getTodayDateString()}
+                            max={getTodayDateString()}
                             value={form.requestDate}
                             onChange={e => {
                               const value =
@@ -1793,6 +1870,9 @@ export default function StudentNewPermissionPage() {
                               width: '100%'
                             }}
                           />
+                          <small className="s-date-format-hint">
+                            Today only
+                          </small>
                         </div>
                       </div>
 
@@ -1907,5 +1987,20 @@ export default function StudentNewPermissionPage() {
   );
 }
 
+function StudentDateInput(props) {
+  const { value } = props;
 
-
+  return (
+    <div className={`s-date-input-wrap${value ? ' has-value' : ''}`}>
+      <DateInput
+        {...props}
+        className={`${props.className || ''}${value ? '' : ' s-date-empty'}`}
+      />
+      {!value && (
+        <span className="s-date-input-placeholder" aria-hidden="true">
+          DD-MM-YYYY
+        </span>
+      )}
+    </div>
+  );
+}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import DashboardLayout from '../../components/DashboardLayout';
 import api from '../../lib/api';
@@ -31,13 +31,19 @@ const yearOf = r =>
 
 const requestType = r => {
     const type = String(
-        r?.requestType || r?.permissionType || r?.type || 'OUTPASS'
+        r?.requestType ||
+        r?.permissionType?.name ||
+        r?.permissionType?.label ||
+        r?.permissionType?.type ||
+        r?.permissionType ||
+        r?.type ||
+        'OUTPASS'
     ).toUpperCase();
 
-    if (type === 'MESS_FEE' || type === 'MESS') return 'Mess Fee';
-    if (type === 'INTERNSHIP') return 'Internship';
-    if (type === 'LIBRARY') return 'Library';
-    if (type === 'OUTPASS' || type === 'OUT-PASS') return 'Out-Pass';
+    if (type.includes('MESS')) return 'Mess Fee';
+    if (type.includes('INTERNSHIP')) return 'Internship';
+    if (type.includes('LIBRARY')) return 'Library';
+    if (type.includes('OUTPASS') || type.includes('OUT-PASS') || type.includes('OUT_PASS')) return 'Out-Pass';
 
     return r?.requestType || r?.permissionType || type;
 };
@@ -124,6 +130,19 @@ export default function HODStudentRequests() {
     const [fromDate, setFromDate] = useState('');
     const [toDate, setToDate] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
+    const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
+    const typeDropdownRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = event => {
+            if (typeDropdownRef.current && !typeDropdownRef.current.contains(event.target)) {
+                setIsTypeDropdownOpen(false);
+            }
+        };
+
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     const fetchRequests = async (refresh = false) => {
         try {
@@ -224,10 +243,18 @@ export default function HODStudentRequests() {
 
             if (typeFilter !== 'ALL') {
                 const type = String(
-                    r?.requestType || r?.permissionType || r?.type || ''
+                    r?.requestType ||
+                    r?.permissionType?.name ||
+                    r?.permissionType?.label ||
+                    r?.permissionType?.type ||
+                    r?.permissionType ||
+                    r?.type ||
+                    ''
                 ).toUpperCase();
 
-                if (type !== typeFilter) return false;
+                const normalizedType = type.replace(/[\s-]+/g, '_');
+                const expectedType = typeFilter === 'MESS_FEE' ? 'MESS' : typeFilter;
+                if (normalizedType !== typeFilter && normalizedType !== expectedType) return false;
             }
 
             if (q) {
@@ -368,7 +395,15 @@ export default function HODStudentRequests() {
                 </div>
 
                 {/* FILTERS - no branch filter */}
-                <div className="card" style={{ marginBottom: 18, padding: 16 }}>
+                <div
+                    className="card"
+                    style={{
+                        marginBottom: 18,
+                        padding: 16,
+                        position: 'relative',
+                        zIndex: isTypeDropdownOpen ? 20 : 1,
+                    }}
+                >
                     <div
                         className="student-request-filter-grid"
                         style={{
@@ -410,43 +445,117 @@ export default function HODStudentRequests() {
                             />
                         </div>
 
-                        <div style={{ position: 'relative' }}>
-                            <select
-                                value={typeFilter}
-                                onChange={e => {
-                                    setTypeFilter(e.target.value);
-                                    setCurrentPage(1);
-                                }}
+                        <div
+                            ref={typeDropdownRef}
+                            style={{ position: 'relative', minWidth: 0 }}
+                        >
+                            <button
+                                type="button"
+                                aria-haspopup="listbox"
+                                aria-expanded={isTypeDropdownOpen}
+                                onClick={() => setIsTypeDropdownOpen(open => !open)}
                                 style={{
                                     width: '100%',
                                     height: 40,
                                     padding: '0 34px 0 12px',
-                                    border: '1px solid #e2e8f0',
+                                    border: isTypeDropdownOpen || typeFilter !== 'ALL'
+                                        ? '1px solid #10b981'
+                                        : '1px solid #e2e8f0',
                                     borderRadius: 8,
                                     outline: 'none',
                                     fontSize: 12,
-                                    color: '#475569',
-                                    background: '#fff',
-                                    appearance: 'none'
+                                    color: typeFilter === 'ALL' ? '#475569' : '#059669',
+                                    background: typeFilter === 'ALL' ? '#fff' : '#ecfdf5',
+                                    cursor: 'pointer',
+                                    textAlign: 'left',
+                                    position: 'relative',
                                 }}
                             >
-                                <option value="ALL">All Types</option>
-                                <option value="OUTPASS">Out-Pass</option>
-                                <option value="MESS_FEE">Mess Fee</option>
-                                <option value="INTERNSHIP">Internship</option>
-                                <option value="LIBRARY">Library</option>
-                            </select>
-                            <ChevronDown
-                                size={15}
-                                style={{
-                                    position: 'absolute',
-                                    right: 11,
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    pointerEvents: 'none',
-                                    color: '#64748b'
-                                }}
-                            />
+                                {typeFilter === 'ALL' ? 'All Types' : {
+                                    OUTPASS: 'Out-Pass',
+                                    MESS_FEE: 'Mess Fee',
+                                    INTERNSHIP: 'Internship',
+                                    LIBRARY: 'Library',
+                                }[typeFilter] || typeFilter}
+                                <ChevronDown
+                                    size={15}
+                                    style={{
+                                        position: 'absolute',
+                                        right: 11,
+                                        top: '50%',
+                                        transform: `translateY(-50%) ${isTypeDropdownOpen ? 'rotate(180deg)' : ''}`,
+                                        pointerEvents: 'none',
+                                        color: '#059669',
+                                        transition: 'transform 0.2s ease',
+                                    }}
+                                />
+                            </button>
+                            {isTypeDropdownOpen && (
+                                <div
+                                    role="listbox"
+                                    aria-label="Permission type"
+                                    style={{
+                                        position: 'absolute',
+                                        top: 'calc(100% + 4px)',
+                                        left: 0,
+                                        width: '100%',
+                                        minWidth: 140,
+                                        background: '#fff',
+                                        border: '1px solid #e2e8f0',
+                                        borderRadius: 8,
+                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)',
+                                        zIndex: 50,
+                                        padding: 4,
+                                    }}
+                                >
+                                    {[
+                                        { value: 'ALL', label: 'All Types' },
+                                        { value: 'OUTPASS', label: 'Out-Pass' },
+                                        { value: 'MESS_FEE', label: 'Mess Fee' },
+                                        { value: 'INTERNSHIP', label: 'Internship' },
+                                        { value: 'LIBRARY', label: 'Library' },
+                                    ].map(option => (
+                                        <button
+                                            key={option.value}
+                                            type="button"
+                                            role="option"
+                                            aria-selected={typeFilter === option.value}
+                                            onClick={() => {
+                                                setTypeFilter(option.value);
+                                                setCurrentPage(1);
+                                                setIsTypeDropdownOpen(false);
+                                            }}
+                                            style={{
+                                                display: 'block',
+                                                width: '100%',
+                                                padding: '8px 12px',
+                                                border: 'none',
+                                                borderRadius: 6,
+                                                background: typeFilter === option.value ? '#10b981' : 'transparent',
+                                                color: typeFilter === option.value ? '#fff' : '#0f172a',
+                                                fontSize: 13,
+                                                fontWeight: typeFilter === option.value ? 600 : 400,
+                                                textAlign: 'left',
+                                                cursor: 'pointer',
+                                            }}
+                                            onMouseEnter={event => {
+                                                if (typeFilter !== option.value) {
+                                                    event.currentTarget.style.background = '#d1fae5';
+                                                    event.currentTarget.style.color = '#047857';
+                                                }
+                                            }}
+                                            onMouseLeave={event => {
+                                                if (typeFilter !== option.value) {
+                                                    event.currentTarget.style.background = 'transparent';
+                                                    event.currentTarget.style.color = '#0f172a';
+                                                }
+                                            }}
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         <DateInput
@@ -604,7 +713,7 @@ export default function HODStudentRequests() {
                                                 <td style={{ padding: 12 }}>
                                                     <button
                                                         type="button"
-                                                        onClick={() => navigate(`/outpass/${request?._id}`)}
+                                                        onClick={() => navigate(`/outpass/${request?._id || request?.id || request?.requestId}?mode=approval`)}
                                                         style={{
                                                             display: 'inline-flex',
                                                             alignItems: 'center',

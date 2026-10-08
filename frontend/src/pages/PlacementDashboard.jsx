@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import DashboardLayout from '../components/DashboardLayout';
 import StatusBadge from '../components/StatusBadge';
 import api from '../lib/api';
+import { formatDate, formatDateTime, formatDuration, getSimplifiedStatus } from '../lib/utils';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
     Cell
@@ -515,7 +516,9 @@ export default function ApproverDashboard() {
     ----------------------------------------------------------------------- */
 
     const placementAllRequests = history.filter(
-        (request) => request?.requestType === 'INTERNSHIP'
+        (request) =>
+            String(request?.requestType || '').toUpperCase() === 'INTERNSHIP' ||
+            Boolean(request?.companyName)
     );
 
     const getPlacementRequestDate = (request) =>
@@ -598,6 +601,70 @@ export default function ApproverDashboard() {
         (request) => request?.status === 'PENDING_PLACEMENT_OFFICER'
     );
 
+    const hasCTPOApproval = (request) => {
+        const directDecision = String(
+            request?.ctpoDecision ||
+            request?.ctpoStatus ||
+            request?.ctpoApprovalStatus ||
+            request?.ctpoDecisionStatus ||
+            ''
+        ).trim().toUpperCase();
+        if (directDecision) {
+            return ['APPROVED', 'APPROVE', 'ACCEPTED', 'ACCEPT', 'CLEARED'].includes(directDecision);
+        }
+
+        const stages = [
+            request?.approvalStages,
+            request?.approvalHistory,
+            request?.approvals,
+            request?.workflowStages,
+            request?.stages,
+            request?.approvalSteps,
+            request?.steps,
+            request?.workflowHistory,
+        ].filter(Array.isArray).flat();
+        const ctpoStages = stages.filter((stage) => {
+            const role = String(
+                stage?.approverRole ||
+                stage?.role ||
+                stage?.approver?.role ||
+                stage?.authorityRole ||
+                stage?.approver?.authorityRole ||
+                stage?.approverType ||
+                stage?.stepRole ||
+                ''
+            ).toUpperCase();
+            return role === 'CTPO' || role.includes('CTPO');
+        });
+
+        if (ctpoStages.length) {
+            const stage = ctpoStages[ctpoStages.length - 1];
+            const decision = String(
+                stage?.decision ||
+                stage?.action ||
+                stage?.status ||
+                stage?.approvalStatus ||
+                stage?.result ||
+                ''
+            ).trim().toUpperCase();
+            return stage?.approved === true || stage?.isApproved === true ||
+                ['APPROVED', 'APPROVE', 'ACCEPTED', 'ACCEPT', 'CLEARED'].includes(decision);
+        }
+
+        const status = String(
+            request?._status ||
+            request?.status ||
+            request?.requestStatus ||
+            request?.currentStatus ||
+            request?.approvalStatus ||
+            ''
+        ).toUpperCase();
+        return !status.includes('PENDING_CTPO') &&
+            !status.includes('PENDING CTPO') &&
+            !status.includes('REJECTED_CTPO') &&
+            !status.includes('CTPO_REJECTED');
+    };
+
     const placementApprovedRequests = placementDashboardRequests.filter(
         (request) => request?.status === 'APPROVED'
     );
@@ -655,27 +722,23 @@ export default function ApproverDashboard() {
     });
 
     const placementHistoryFiltered = placementDashboardRequests.filter((request) => {
-        if (placementStatusFilter === 'REVIEWED') {
-            if (
-                request?.status !== 'APPROVED' &&
-                request?.status !== 'REJECTED_PLACEMENT_OFFICER'
-            ) {
-                return false;
-            }
-        } else if (
+        if (!hasCTPOApproval(request)) return false;
+        const status = String(request?.status || '').toUpperCase();
+        if (status !== 'APPROVED' && status !== 'REJECTED_PLACEMENT_OFFICER') {
+            return false;
+        }
+
+        if (placementStatusFilter !== 'REVIEWED' &&
             placementStatusFilter !== 'ALL' &&
-            request?.status !== placementStatusFilter
-        ) {
+            status !== placementStatusFilter) {
             return false;
         }
 
         if (!placementSearchTerm) return true;
-
         const studentName = String(request?.studentId?.name || '').toLowerCase();
         const rollNo = String(request?.studentId?.rollNo || '').toLowerCase();
         const company = String(request?.companyName || '').toLowerCase();
         const internshipRole = String(request?.role || '').toLowerCase();
-
         return (
             studentName.includes(placementSearchTerm) ||
             rollNo.includes(placementSearchTerm) ||
@@ -715,23 +778,14 @@ export default function ApproverDashboard() {
         if (!value) return '-';
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return '-';
-        return date.toLocaleDateString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            year: 'numeric',
-        });
+        return formatDate(value);
     };
 
     const formatPlacementDateTime = (value) => {
         if (!value) return '-';
         const date = new Date(value);
         if (Number.isNaN(date.getTime())) return '-';
-        return date.toLocaleString('en-IN', {
-            day: '2-digit',
-            month: 'short',
-            hour: '2-digit',
-            minute: '2-digit',
-        });
+        return formatDateTime(value);
     };
 
     const getPlacementDocumentUrl = (documentUrl) => {
@@ -785,7 +839,7 @@ export default function ApproverDashboard() {
             formatPlacementDateTime(getPlacementRequestDate(request)),
             formatPlacementDate(request?.startDate),
             formatPlacementDate(request?.endDate),
-            request?.status,
+            getSimplifiedStatus(request?.status),
             request?.rejectionReason,
         ]);
 
@@ -839,7 +893,7 @@ export default function ApproverDashboard() {
                     req?.branchId?.name || req?.branchId?.code || '-',
                     req?.companyName || '-',
                     req?.role || '-',
-                    req?.status || '-'
+                    getSimplifiedStatus(req?.status)
                 ]),
                 styles: { fontSize: 8 },
                 headStyles: { fillColor: [40, 45, 90] }
@@ -892,7 +946,7 @@ export default function ApproverDashboard() {
         }
     };
 
-    const renderPlacementStatus = (status) => {
+    const renderPlacementStatus = (status, showIcon = true) => {
         const normalized = String(status || '').toUpperCase();
 
         if (normalized === 'PENDING_PLACEMENT_OFFICER') {
@@ -901,7 +955,6 @@ export default function ApproverDashboard() {
                     style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 5,
                         padding: '5px 10px',
                         borderRadius: 999,
                         background: '#fff7ed',
@@ -911,7 +964,7 @@ export default function ApproverDashboard() {
                         fontWeight: 700,
                     }}
                 >
-                    <Clock size={13} />
+                    {showIcon && <Clock size={13} />}
                     Pending
                 </span>
             );
@@ -923,7 +976,6 @@ export default function ApproverDashboard() {
                     style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 5,
                         padding: '5px 10px',
                         borderRadius: 999,
                         background: '#ecfdf5',
@@ -933,7 +985,7 @@ export default function ApproverDashboard() {
                         fontWeight: 700,
                     }}
                 >
-                    <CheckCircle2 size={13} />
+                    {showIcon && <CheckCircle2 size={13} />}
                     Approved
                 </span>
             );
@@ -945,7 +997,6 @@ export default function ApproverDashboard() {
                     style={{
                         display: 'inline-flex',
                         alignItems: 'center',
-                        gap: 5,
                         padding: '5px 10px',
                         borderRadius: 999,
                         background: '#fef2f2',
@@ -955,13 +1006,13 @@ export default function ApproverDashboard() {
                         fontWeight: 700,
                     }}
                 >
-                    <XCircle size={13} />
+                    {showIcon && <XCircle size={13} />}
                     Rejected
                 </span>
             );
         }
 
-        return <StatusBadge status={status} />;
+        return <StatusBadge status={status} showIcon={false} />;
     };
 
     const printPlacementReport = (records = placementHistoryFiltered) => {
@@ -975,7 +1026,7 @@ export default function ApproverDashboard() {
             <td>${request?.role || '-'}</td>
             <td>${request?.internshipMode || '-'}</td>
             <td>${formatPlacementDate(request?.startDate)} - ${formatPlacementDate(request?.endDate)}</td>
-            <td>${String(request?.status || '').replace(/_/g, ' ')}</td>
+            <td>${getSimplifiedStatus(request?.status)}</td>
             <td>${request?.rejectionReason || '-'}</td>
           </tr>
         `
@@ -1032,7 +1083,7 @@ export default function ApproverDashboard() {
           <div class="summary">
             <strong>Total: ${records.length}</strong>
             <strong>Approved: ${records.filter((r) => r?.status === 'APPROVED').length}</strong>
-            <strong>Pending: ${records.filter((r) => r?.status === 'PENDING_PLACEMENT_OFFICER').length}</strong>
+            <strong>Pending: ${records.filter((r) => getSimplifiedStatus(r?.status) === 'Pending').length}</strong>
             <strong>Rejected: ${records.filter((r) => r?.status === 'REJECTED_PLACEMENT_OFFICER').length}</strong>
           </div>
 
@@ -1658,7 +1709,6 @@ export default function ApproverDashboard() {
                                 style={{ width: 165 }}
                             >
                                 <option value="ALL">All Requests</option>
-                                <option value="PENDING_PLACEMENT_OFFICER">Pending</option>
                                 <option value="APPROVED">Approved</option>
                                 <option value="REJECTED_PLACEMENT_OFFICER">Rejected</option>
                             </select>
@@ -1891,7 +1941,7 @@ export default function ApproverDashboard() {
                                                         )}
                                                     </td>
 
-                                                    <td>{renderPlacementStatus(request.status)}</td>
+                                                    <td>{renderPlacementStatus(request.status, false)}</td>
 
                                                     <td>
                                                         {documentUrl ? (
@@ -1927,7 +1977,7 @@ export default function ApproverDashboard() {
                                                             }}
                                                         >
                                                             <button
-                                                                className="btn btn-ghost btn-sm"
+                                                                type="button"
                                                                 onClick={() =>
                                                                     navigate(
                                                                         isPendingView
@@ -1936,23 +1986,25 @@ export default function ApproverDashboard() {
                                                                     )
                                                                 }
                                                                 style={{
-                                                                    height: '32px',
-                                                                    border: '1px solid #a7f3d0',
-                                                                    background: '#ecfdf5',
-                                                                    color: '#10b981',
-                                                                    borderRadius: '7px',
-                                                                    padding: '0 12px',
                                                                     display: 'inline-flex',
                                                                     alignItems: 'center',
                                                                     justifyContent: 'center',
                                                                     gap: '5px',
-                                                                    fontSize: '11px',
-                                                                    fontWeight: 700,
-                                                                    cursor: 'pointer'
+                                                                    padding: '5px 14px',
+                                                                    borderRadius: '50px',
+                                                                    fontSize: '12.5px',
+                                                                    fontWeight: 600,
+                                                                    color: '#10b981',
+                                                                    background: 'rgba(209, 250, 229, 0.92)',
+                                                                    border: '1px solid #a7f3d0',
+                                                                    cursor: 'pointer',
+                                                                    transition: 'all 0.15s',
+                                                                    fontFamily: 'inherit',
+                                                                    whiteSpace: 'nowrap'
                                                                 }}
                                                             >
-                                                                <Eye size={15} />
-                                                                {isPendingView ? 'View' : 'Review'}
+                                                                <Eye size={14} />
+                                                                {isPendingView ? 'Review' : 'View'}
                                                             </button>
 
 
@@ -2413,7 +2465,7 @@ export default function ApproverDashboard() {
                                                                 <td>
                                                                     {req.documentUrl ? (
                                                                         <a
-                                                                            href={req.documentUrl}
+                                                                            href={getPlacementDocumentUrl(req.documentUrl)}
                                                                             target="_blank"
                                                                             rel="noreferrer"
                                                                             style={{
@@ -2547,12 +2599,12 @@ export default function ApproverDashboard() {
                                                                 </div>
                                                             </td>
                                                             <td className="td-muted">
-                                                                {reqType === 'OUTPASS' && (new Date(req.outDate).toLocaleDateString('en-IN'))}
-                                                                {reqType === 'MESS_FEE' && (`${new Date(req.startDate).toLocaleDateString('en-IN')} - ${new Date(req.endDate).toLocaleDateString('en-IN')}`)}
-                                                                {reqType === 'INTERNSHIP' && (`${new Date(req.startDate).toLocaleDateString('en-IN')} - ${new Date(req.endDate).toLocaleDateString('en-IN')}`)}
-                                                                {reqType === 'LIBRARY' && (new Date(req.requestDate || req.createdAt).toLocaleDateString('en-IN'))}
+                                                                {reqType === 'OUTPASS' && formatDate(req.outDate)}
+                                                                {reqType === 'MESS_FEE' && formatDuration(req.startDate, req.endDate)}
+                                                                {reqType === 'INTERNSHIP' && formatDuration(req.startDate, req.endDate)}
+                                                                {reqType === 'LIBRARY' && formatDate(req.requestDate || req.createdAt)}
                                                             </td>
-                                                            <td>{isHostelIncharge ? renderHostelStatus(req) : <StatusBadge status={req.status} />}</td>
+                                                            <td>{isHostelIncharge ? renderHostelStatus(req) : <StatusBadge status={getSimplifiedStatus(req.status)} showIcon={false} />}</td>
                                                             {isHostelIncharge && (
                                                                 <td>
                                                                     <button
@@ -2676,5 +2728,3 @@ export default function ApproverDashboard() {
         </>
     );
 }
-
-

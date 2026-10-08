@@ -210,25 +210,31 @@ const yearOf = request =>
     '-';
 
 const requestTypeKey = request => {
-    if (request?.messAmount !== undefined || request?.paidStatus !== undefined) return 'MESS_FEE';
-    if (request?.companyName !== undefined || request?.internshipMode !== undefined || request?.role !== undefined) return 'INTERNSHIP';
-    if (request?.outDate !== undefined || request?.expectedReturnDate !== undefined || request?.outTime !== undefined) return 'OUTPASS';
-    if (request?.permissionType?.name === 'Library' || request?.permissionType?.label === 'Library') return 'LIBRARY';
-    
     const type = normalize(
         request?.requestType ||
         request?.permissionType?.name ||
         request?.permissionType?.label ||
+        request?.permissionType?.type ||
         request?.permissionType ||
         request?.type ||
         ''
     );
-    
-    if (type === 'MESS_FEE' || type === 'MESS') return 'MESS_FEE';
-    if (type === 'INTERNSHIP') return 'INTERNSHIP';
-    if (type === 'LIBRARY') return 'LIBRARY';
-    
+
+    if (type.includes('MESS')) return 'MESS_FEE';
+    if (type.includes('INTERNSHIP')) return 'INTERNSHIP';
+    if (type.includes('LIBRARY')) return 'LIBRARY';
+    if (type.includes('OUTPASS') || type.includes('OUT_PASS')) return 'OUTPASS';
+
+    if (request?.messAmount !== undefined || request?.paidStatus !== undefined) return 'MESS_FEE';
+    if (request?.companyName !== undefined || request?.internshipMode !== undefined) return 'INTERNSHIP';
+    if (request?.outDate !== undefined || request?.expectedReturnDate !== undefined || request?.outTime !== undefined) return 'OUTPASS';
+
     return 'OUTPASS';
+};
+
+const getRequestId = request => {
+    const id = request?._id || request?.id || request?.requestId;
+    return typeof id === 'object' ? id?._id || id?.id : id;
 };
 
 const requestType = request => {
@@ -966,6 +972,8 @@ export default function HODBranchRequests() {
                     style={{
                         marginBottom: 18,
                         padding: 16,
+                        position: 'relative',
+                        zIndex: isTypeDropdownOpen ? 20 : 1,
                     }}
                 >
                     <div
@@ -1519,9 +1527,7 @@ export default function HODBranchRequests() {
                                                         <button
                                                             type="button"
                                                             onClick={() =>
-                                                                navigate(
-                                                                    `/outpass/${request?._id || request?.id || request?.requestId}`
-                                                                )
+                                                                navigate(`/outpass/${getRequestId(request)}?mode=approval`)
                                                             }
                                                             style={{
                                                                 height: 32,

@@ -355,6 +355,13 @@
 .s-page-header-left {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.s-page-header-title {
+  min-width: 0;
 }
 
 .s-page-title {
@@ -491,12 +498,13 @@
 /* ── STAT CARDS ─────────────────────────────────────────────────── */
 .s-stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
   margin-bottom: 20px;
 }
 
 .s-stat-card {
+  min-width: 0;
   background: rgba(255, 255, 255, 0.90);
   border: 1px solid rgba(226, 232, 240, 0.65);
   border-radius: 18px;
@@ -508,6 +516,10 @@
   transition: transform 0.18s ease, box-shadow 0.18s ease;
   box-shadow: 0 2px 12px rgba(15, 23, 42, 0.05);
   backdrop-filter: blur(8px);
+}
+
+.s-stat-card > div:last-child {
+  min-width: 0;
 }
 
 .s-stat-card:hover {
@@ -531,6 +543,7 @@
   font-weight: 600;
   color: #64748b;
   margin-bottom: 2px;
+  overflow-wrap: anywhere;
 }
 
 .s-stat-value {
@@ -542,12 +555,13 @@
 /* ── CHARTS ─────────────────────────────────────────────────────── */
 .s-chart-grid {
   display: grid;
-  grid-template-columns: 1.8fr 1fr;
+  grid-template-columns: minmax(0, 1.8fr) minmax(280px, 1fr);
   gap: 16px;
   align-items: stretch;
 }
 
 .s-chart-card {
+  min-width: 0;
   background: rgba(255, 255, 255, 0.90);
   border: 1px solid rgba(226, 232, 240, 0.65);
   border-radius: 18px;
@@ -1384,11 +1398,31 @@
 
   .s-page-header {
     padding: 16px 16px 12px;
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .s-page-header-left {
+    width: 100%;
+  }
+
+  .s-page-header-right {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .s-stat-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
+  }
+
+  .s-stat-card {
+    padding: 14px;
+  }
+
+  .s-chart-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
   }
 
   .s-perm-tabs {
@@ -1416,5 +1450,86 @@
 
   .s-search-input {
     min-width: 100px;
+  }
+
+  .s-student-dashboard-heading {
+    width: 100%;
+  }
+
+  .s-student-dashboard-name {
+    font-size: 27px !important;
+  }
+
+  .s-student-dashboard-meta {
+    row-gap: 5px;
+    font-size: 13px !important;
+  }
+
+  .s-student-dashboard-meta > span {
+    overflow-wrap: anywhere;
+  }
+
+  .s-student-meta-divider {
+    display: none;
+  }
+
+  .s-student-dashboard-date {
+    width: fit-content;
+    max-width: 100%;
+    padding: 8px 11px !important;
+  }
+
+  .s-student-type-picker {
+    width: 100%;
+  }
+
+  .s-chart-card {
+    min-width: 0;
+    padding: 16px 12px 12px;
+  }
+
+  .s-chart-title {
+    font-size: 14px;
+  }
+
+  .s-chart-sub {
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  .s-year-selector {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 380px) {
+  .s-main-content {
+    padding: 12px 10px 22px;
+  }
+
+  .s-page-header {
+    padding: 12px 10px 10px;
+  }
+
+  .s-stat-card {
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .s-stat-icon {
+    width: 36px;
+    height: 36px;
+  }
+
+  .s-stat-label {
+    font-size: 11px;
+  }
+
+  .s-stat-value {
+    font-size: 21px;
+  }
+
+  .s-student-dashboard-name {
+    font-size: 24px !important;
   }
 }

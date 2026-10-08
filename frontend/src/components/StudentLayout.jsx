@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import StudentSidebar from './StudentSidebar';
-import { useAuth } from '../context/AuthContext';
-import { Menu, Bell, ChevronDown } from 'lucide-react';
+import { Menu } from 'lucide-react';
 import '../student.css';
 
 export default function StudentLayout({
@@ -11,11 +10,6 @@ export default function StudentLayout({
   headerRight = null   // slot for extra controls in the header (e.g. search box)
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user } = useAuth();
-
-  const initials = user?.name
-    ? user.name.split(' ').filter(Boolean).map(w => w[0]).join('').slice(0, 2).toUpperCase()
-    : 'U';
 
   return (
     <div className="s-layout">
@@ -35,11 +29,19 @@ export default function StudentLayout({
         {/* Page header — always at the top of the main panel */}
         <header className="s-page-header">
           <div className="s-page-header-left">
-            {/* Mobile hamburger */}
-              <div>
-                {pageTitle   && <h1 className="s-page-title">{pageTitle}</h1>}
-                {pageSubtitle && <p className="s-page-subtitle">{pageSubtitle}</p>}
-              </div>
+            <button
+              type="button"
+              className="s-menu-btn"
+              onClick={() => setSidebarOpen(true)}
+              aria-label="Open navigation menu"
+              aria-expanded={sidebarOpen}
+            >
+              <Menu size={20} />
+            </button>
+            <div className="s-page-header-title">
+              {pageTitle && <h1 className="s-page-title">{pageTitle}</h1>}
+              {pageSubtitle && <p className="s-page-subtitle">{pageSubtitle}</p>}
+            </div>
           </div>
 
           <div className="s-page-header-right">

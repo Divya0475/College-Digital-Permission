@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import DashboardLayout from "../../components/DashboardLayout";
-import CTPOMobileNav from "../../components/CTPOMobileNav";
 import { useAuth } from "../../context/AuthContext";
 import api from "../../lib/api";
 
@@ -817,7 +816,6 @@ const CTPODashboard = () => {
         <div style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <CTPOMobileNav />
               <div>
                 <div style={{ color: '#475569', fontSize: 16, fontWeight: 600, marginBottom: 4 }}>
                   Welcome back,

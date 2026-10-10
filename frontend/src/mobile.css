@@ -117,7 +117,7 @@ h1, h2, h3, h4, h5, h6, p, span, div {
   }
 
   /* 7. FILTERS AND DROPDOWNS */
-  .filters, [class*="-filter"], .search-bar, [class*="-search"], .filter-section {
+  .filters, [class*="-filter"]:not(svg):not(input):not(select):not(button):not(.pl-filter-row), .search-bar, [class*="-search"]:not(svg), .filter-section {
     display: flex !important;
     flex-direction: column !important;
     width: 100% !important;

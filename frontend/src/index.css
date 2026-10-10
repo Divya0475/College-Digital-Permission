@@ -3601,3 +3601,21 @@ tbody td {
     display: none;
   }
 }
+
+@media (max-width: 768px) {
+  .admin-filter-bar { flex-direction: column !important; align-items: stretch !important; justify-content: flex-start !important; gap: 14px !important; }
+  .admin-filter-bar .admin-filter-group { flex: 0 0 auto !important; width: 100% !important; max-width: 100% !important; min-width: 0 !important; margin: 0 !important; text-align: left !important; }
+  .admin-filter-bar .form-label { display: block; text-align: left; margin-bottom: 6px; }
+  .admin-filter-bar .form-input, .admin-filter-bar select { width: 100% !important; height: 44px; padding: 0 14px; text-align: left; box-sizing: border-box; }
+  .admin-students-actions { width: 100% !important; margin: 0 !important; align-self: stretch !important; flex-direction: column !important; align-items: stretch !important; gap: 10px !important; padding: 0 !important; }
+  .admin-students-actions button { width: 100%; justify-content: center; }
+  .admin-students-actions span { white-space: normal !important; text-align: left; }
+}
+
+@media (max-width: 768px) {
+  .pl-filter-row { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 10px !important; align-items: stretch !important; }
+  .pl-filter-row > * { width: 100% !important; max-width: 100% !important; min-width: 0 !important; flex: none !important; }
+  .pl-filter-row .form-input { height: 44px; padding: 0 14px; text-align: left; box-sizing: border-box; }
+  .pl-filter-select { text-align: left; text-align-last: left; line-height: 44px; padding-right: 32px; }
+  .pl-filter-dates { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
+}

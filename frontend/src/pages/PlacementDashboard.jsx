@@ -32,7 +32,6 @@ import {
     ExternalLink,
     RefreshCw,
     Download,
-    Search,
     CalendarDays,
     TrendingUp,
     FileText,
@@ -1668,6 +1667,7 @@ export default function ApproverDashboard() {
                     }}
                 >
                     <div
+                        className="pl-filter-row"
                         style={{
                             display: 'flex',
                             gap: 8,
@@ -1682,28 +1682,17 @@ export default function ApproverDashboard() {
                                 position: 'relative',
                             }}
                         >
-                            <Search
-                                size={16}
-                                style={{
-                                    position: 'absolute',
-                                    left: 12,
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    color: 'var(--text-muted)',
-                                }}
-                            />
                             <input
                                 className="form-input placement-request-filter-input"
                                 value={placementSearch}
                                 onChange={(e) => setPlacementSearch(e.target.value)}
                                 placeholder="Search student, roll number, company or role..."
-                                style={{ paddingLeft: 36 }}
                             />
                         </div>
 
                         {!isPendingView && (
                             <select
-                                className="form-input placement-request-filter-select"
+                                className="form-input placement-request-filter-select pl-filter-select"
                                 value={placementStatusFilter}
                                 onChange={(e) => setPlacementStatusFilter(e.target.value)}
                                 style={{ width: 165 }}
@@ -1715,7 +1704,7 @@ export default function ApproverDashboard() {
                         )}
 
                         <select
-                            className="form-input placement-request-filter-select"
+                            className="form-input placement-request-filter-select pl-filter-select"
                             value={placementPeriod}
                             onChange={(e) => setPlacementPeriod(e.target.value)}
                             style={{ width: 145 }}
@@ -1730,6 +1719,7 @@ export default function ApproverDashboard() {
 
                     {placementPeriod === 'CUSTOM' && (
                         <div
+                            className="pl-filter-row pl-filter-dates"
                             style={{
                                 display: 'flex',
                                 gap: 8,

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import DashboardLayout from '../../components/DashboardLayout';
 import api from '../../lib/api';
-import { UserCheck, CheckCircle2, AlertCircle, Edit2, Save, X, Download, Search } from 'lucide-react';
+import { UserCheck, CheckCircle2, AlertCircle, Edit2, Save, X, Download } from 'lucide-react';
 
 export default function AdminStudents() {
   const [allStudents, setAllStudents] = useState([]);
@@ -120,12 +120,11 @@ export default function AdminStudents() {
           <div className="form-group admin-filter-group" style={{ maxWidth: '280px', flex: '1 1 200px' }}>
             <label className="form-label" style={{ fontWeight: 700, color: '#1E293B', marginBottom: '6px' }}>Search Students</label>
             <div style={{ position: 'relative' }}>
-              <Search size={18} color="#94A3B8" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }} />
               <input
                 type="text"
                 className="form-input"
                 placeholder="Search by name or roll..."
-                style={{ width: '100%', paddingLeft: '38px', fontWeight: 500 }}
+                style={{ width: '100%', fontWeight: 500 }}
                 value={searchTerm}
                 onChange={e => {
                   setSearchTerm(e.target.value);
@@ -186,7 +185,7 @@ export default function AdminStudents() {
           </div>
 
           {/* Export Button and Showing count on right side */}
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', alignSelf: 'flex-end', paddingBottom: '2px' }}>
+          <div className="admin-students-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px', flexWrap: 'wrap', alignSelf: 'flex-end', paddingBottom: '2px' }}>
             <button
               onClick={handleExport}
               disabled={exporting}
